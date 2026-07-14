@@ -40,7 +40,7 @@ Reference sources (use in that order):
 ### 4. Validate
 After writing files, run:
 ```bash
-cd infrastructure && terraform fmt -recursive && terraform validate
+cd infrastructure && terraform fmt -recursive && terraform init -backend=false && terraform validate
 ```
 Fix any errors before proceeding.
 
