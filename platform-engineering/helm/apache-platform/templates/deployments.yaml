@@ -126,8 +126,9 @@ spec:
         - name: superset-config-file
           configMap:
             name: superset-config
-{{- end }}
 ---
+{{- end }}
+
 {{- if .Values.airflow.enabled }}
 apiVersion: apps/v1
 kind: Deployment
