@@ -1,5 +1,4 @@
-global:
-  namespace: data-platform
+# Namespace is determined by the Helm release namespace (helm install/upgrade -n / --namespace).
 
 polaris:
   enabled: true
