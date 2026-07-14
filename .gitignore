@@ -1,0 +1,78 @@
+# macOS
+.DS_Store
+
+# Editors and IDEs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.kubeconfig
+kubeconfig*
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+tmp/
+.cache/
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Terraform plan artifacts
+*.tfplan
+plan.out
+
+# Kubernetes and Helm
+*.kubeconfig
+helmfile.lock
+**/charts/*/charts/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Airflow and dbt generated artifacts
+airflow-webserver.pid
+airflow-scheduler.pid
+airflow.db
+logs/
+target/
+dbt_packages/
+manifest.json
+run_results.json
+
+# Node (if tooling is added later)
+node_modules/
+
+# Misc build outputs
+dist/
+build/
+out/
