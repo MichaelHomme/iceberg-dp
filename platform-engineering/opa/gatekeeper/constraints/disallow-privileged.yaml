@@ -1,0 +1,11 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDisallowPrivileged
+metadata:
+  name: platform-disallow-privileged
+spec:
+  enforcementAction: dryrun
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces: ["data-platform"]

@@ -1,0 +1,18 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: platform-required-labels
+spec:
+  enforcementAction: dryrun
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Service", "ConfigMap"]
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces: ["data-platform"]
+  parameters:
+    labels:
+      - app.kubernetes.io/name
+      - app.kubernetes.io/part-of
+      - app.kubernetes.io/managed-by

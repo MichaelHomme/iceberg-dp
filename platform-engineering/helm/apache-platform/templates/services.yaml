@@ -1,0 +1,74 @@
+{{- if .Values.polaris.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: polaris
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: polaris
+spec:
+  selector:
+    app.kubernetes.io/name: polaris
+  ports:
+    - name: http
+      port: {{ .Values.polaris.service.port }}
+      targetPort: {{ .Values.polaris.service.port }}
+---
+{{- end }}
+
+{{- if .Values.trino.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: trino
+spec:
+  selector:
+    app.kubernetes.io/name: trino
+  ports:
+    - name: http
+      port: {{ .Values.trino.service.port }}
+      targetPort: {{ .Values.trino.service.port }}
+---
+{{- end }}
+
+{{- if .Values.superset.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: superset
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: superset
+spec:
+  selector:
+    app.kubernetes.io/name: superset
+  ports:
+    - name: http
+      port: {{ .Values.superset.service.port }}
+      targetPort: {{ .Values.superset.service.port }}
+---
+{{- end }}
+
+{{- if .Values.airflow.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-web
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: airflow
+spec:
+  selector:
+    app.kubernetes.io/name: airflow
+  ports:
+    - name: http
+      port: {{ .Values.airflow.service.port }}
+      targetPort: {{ .Values.airflow.service.port }}
+{{- end }}

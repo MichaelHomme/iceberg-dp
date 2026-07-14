@@ -1,0 +1,164 @@
+{{- if .Values.polaris.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polaris
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: polaris
+spec:
+  replicas: {{ .Values.polaris.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: polaris
+  template:
+    metadata:
+      labels:
+{{ include "apache-platform.labels" . | indent 8 }}
+        app.kubernetes.io/name: polaris
+    spec:
+      containers:
+        - name: polaris
+          image: {{ .Values.polaris.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.polaris.service.port }}
+          envFrom:
+            - configMapRef:
+                name: polaris-config
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+{{- end }}
+---
+{{- if .Values.trino.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: trino
+spec:
+  replicas: {{ .Values.trino.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trino
+  template:
+    metadata:
+      labels:
+{{ include "apache-platform.labels" . | indent 8 }}
+        app.kubernetes.io/name: trino
+    spec:
+      containers:
+        - name: trino
+          image: {{ .Values.trino.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.trino.service.port }}
+          volumeMounts:
+            - name: trino-config
+              mountPath: /etc/trino
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+      volumes:
+        - name: trino-config
+          configMap:
+            name: trino-config
+{{- end }}
+---
+{{- if .Values.superset.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superset
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: superset
+spec:
+  replicas: {{ .Values.superset.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: superset
+  template:
+    metadata:
+      labels:
+{{ include "apache-platform.labels" . | indent 8 }}
+        app.kubernetes.io/name: superset
+    spec:
+      containers:
+        - name: superset
+          image: {{ .Values.superset.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.superset.service.port }}
+          env:
+            - name: SUPERSET_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: superset-config
+                  key: SUPERSET_ENV
+            - name: SUPERSET_CONFIG_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: superset-config
+                  key: SUPERSET_CONFIG_PATH
+          volumeMounts:
+            - name: superset-config-file
+              mountPath: /app/pythonpath/superset_config.py
+              subPath: superset_config.py
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+      volumes:
+        - name: superset-config-file
+          configMap:
+            name: superset-config
+{{- end }}
+---
+{{- if .Values.airflow.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-web
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: airflow
+spec:
+  replicas: {{ .Values.airflow.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: airflow
+  template:
+    metadata:
+      labels:
+{{ include "apache-platform.labels" . | indent 8 }}
+        app.kubernetes.io/name: airflow
+    spec:
+      containers:
+        - name: airflow
+          image: {{ .Values.airflow.image }}
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c", "airflow db init && airflow webserver"]
+          ports:
+            - containerPort: {{ .Values.airflow.service.port }}
+          envFrom:
+            - configMapRef:
+                name: airflow-config
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+{{- end }}
