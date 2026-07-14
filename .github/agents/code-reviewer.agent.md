@@ -1,7 +1,7 @@
 ---
 description: "Use when reviewing code changes, pull requests, or branches before merging to main. Performs security analysis (OWASP Top 10, secrets detection, privilege escalation) and best-practice checks scoped to this repository's domains: Terraform/infrastructure, Helm/Kubernetes, Airflow DAGs, and dbt. Trigger on: code review, PR review, security review, review before merge, check for secrets, audit, best practices."
 name: "Code Reviewer"
-tools: [read, search, web]
+tools: [read, search, execute, web]
 argument-hint: "Branch name, PR number, or file paths to review"
 ---
 
