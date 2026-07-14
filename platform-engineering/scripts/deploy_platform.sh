@@ -16,6 +16,9 @@ HELM_CHART_PATH="${HELM_CHART_PATH:-platform-engineering/helm/apache-platform}"
 GATEKEEPER_RELEASE_NAME="${GATEKEEPER_RELEASE_NAME:-gatekeeper}"
 GATEKEEPER_NAMESPACE="${GATEKEEPER_NAMESPACE:-gatekeeper-system}"
 
+if [[ "$PLATFORM_NAMESPACE" != "data-platform" ]]; then
+  echo "WARN: PLATFORM_NAMESPACE is '$PLATFORM_NAMESPACE' but Gatekeeper constraints in platform-engineering/opa/gatekeeper/constraints are scoped to 'data-platform'. Update match.namespaces accordingly."
+fi
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "kubectl is required"
   exit 1
