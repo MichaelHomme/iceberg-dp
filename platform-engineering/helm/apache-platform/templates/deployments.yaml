@@ -39,10 +39,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: trino
-  namespace: {{ .Values.global.namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
-    app.kubernetes.io/name: trino
 spec:
   replicas: {{ .Values.trino.replicas }}
   selector:
