@@ -1,0 +1,64 @@
+{{- if .Values.polaris.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: polaris-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: polaris
+data:
+{{- range $k, $v := .Values.polaris.config }}
+  {{ $k }}: {{ $v | quote }}
+{{- end }}
+---
+{{- end }}
+
+{{- if .Values.trino.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: trino
+data:
+{{- range $k, $v := .Values.trino.config }}
+  {{ $k }}: |
+{{ $v | indent 4 }}
+{{- end }}
+---
+{{- end }}
+
+{{- if .Values.superset.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: superset-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: superset
+data:
+{{- range $k, $v := .Values.superset.config }}
+  {{ $k }}: |
+{{ $v | indent 4 }}
+{{- end }}
+---
+{{- end }}
+
+{{- if .Values.airflow.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+{{ include "apache-platform.labels" . | indent 4 }}
+    app.kubernetes.io/name: airflow
+data:
+{{- range $k, $v := .Values.airflow.config }}
+  {{ $k }}: {{ $v | quote }}
+{{- end }}
+{{- end }}

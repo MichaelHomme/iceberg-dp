@@ -1,0 +1,12 @@
+iceberg_trino:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none
+      host: "{{ env_var('TRINO_HOST', 'trino.data-platform.svc.cluster.local') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | int }}"
+      user: "{{ env_var('TRINO_USER', 'dbt') }}"
+      catalog: "{{ env_var('TRINO_CATALOG', 'iceberg') }}"
+      schema: "{{ env_var('TRINO_SCHEMA', 'analytics') }}"
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
