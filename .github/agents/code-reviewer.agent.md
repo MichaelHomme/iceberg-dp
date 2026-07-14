@@ -17,7 +17,7 @@ Determine what to review from the argument:
 - If given file paths: read those files directly.
 - If given a PR number: read the PR description and diff.
 
-Always start with `git diff main... --stat` to understand the blast radius before diving in.
+Always start with `git diff --stat main...HEAD` (or `git diff --stat main...<branch>` when a branch is provided) to understand the blast radius before diving in.
 
 ### 2. Load Domain Context
 For each changed file, identify its domain and load the relevant skill:
