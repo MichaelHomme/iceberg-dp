@@ -3,7 +3,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: polaris
-  namespace: {{ .Values.global.namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: polaris
