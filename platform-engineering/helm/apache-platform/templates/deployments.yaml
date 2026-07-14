@@ -32,8 +32,9 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
-{{- end }}
 ---
+{{- end }}
+
 {{- if .Values.trino.enabled }}
 apiVersion: apps/v1
 kind: Deployment
