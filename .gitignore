@@ -49,6 +49,7 @@ terraform.tfvars
 *.tfplan
 tfplan
 plan.out
+infrastructure/terraform/backend.hcl
 
 # Kubernetes and Helm
 *.kubeconfig
