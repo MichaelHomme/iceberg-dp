@@ -24,3 +24,51 @@ cp platform-engineering/.env.platform.example platform-engineering/.env.platform
 ./platform-engineering/scripts/deploy_platform.sh
 ./platform-engineering/scripts/validate_platform.sh
 ```
+
+## Deploy Notes
+- Set `AKS_RESOURCE_GROUP` and `AKS_NAME` in `platform-engineering/.env.platform` to refresh kubeconfig automatically before deploy.
+- Set `ENABLE_GATEKEEPER=false` in `platform-engineering/.env.platform` to deploy without OPA policy enforcement during initial setup.
+- Set `ENABLE_GATEKEEPER=true` to install Gatekeeper and apply constraints.
+- Gatekeeper constraints are rendered to `PLATFORM_NAMESPACE` at deploy time, so no manual namespace edits are needed in `opa/gatekeeper/constraints`.
+
+## Data Access Policy (Initial)
+- Trino file-based access control is configured in `helm/apache-platform/values.yaml` (`access-control.properties` + `rules.json`).
+- User policies currently enforced in Trino:
+	- `michael.homme@fb.no` (admin): full access to all catalogs/schemas/tables.
+	- `alexander.field.fb.no` (data engineer): read/write access to `bronze`, `silver`, and `gold` schemas.
+	- `olav.syse@fb.no` (data analyst): read-only access to `gold` schema.
+- Medallion schemas expected by policy: `bronze`, `silver`, `gold`.
+
+## Polaris And OPA Scope
+- Polaris should remain the system of record for catalog governance (catalog, namespace, and table-level permissions).
+- Trino enforces query-time access controls against those medallion layers.
+- OPA/Gatekeeper is kept for Kubernetes workload policy and platform guardrails, not as the primary data-plane authorization engine.
+
+## Trino OIDC (Keycloak-Compatible)
+### Phase 1: Dev (In-Cluster Keycloak)
+1. Configure `platform-engineering/.env.platform` with Keycloak and user bootstrap values.
+2. Run the Keycloak bootstrap script:
+	- `./platform-engineering/scripts/setup_keycloak_phase1.sh`
+3. Enable OIDC in Helm values (environment-specific override file):
+	- `trino.oidc.enabled: true`
+	- `trino.oidc.issuer: "http://keycloak.identity.svc.cluster.local:8080/realms/frigg-data-platform"`
+	- `trino.oidc.clientId: "trino"`
+	- `trino.oidc.secretName: "trino-oidc-secret"`
+	- `trino.oidc.secretKey: "client-secret"`
+4. Redeploy the chart:
+	- `helm upgrade --install apache-platform platform-engineering/helm/apache-platform --namespace <platform-namespace> --create-namespace -f <your-override-values>.yaml`
+
+Notes:
+- Trino uses `principal-field=email`, so access policy rules map directly to user emails.
+- Keep client secrets only in Kubernetes Secrets, not in committed values files.
+- If Keycloak install times out, tune `KEYCLOAK_IMAGE_TAG`, `KEYCLOAK_POSTGRESQL_IMAGE_TAG`, and `KEYCLOAK_HELM_TIMEOUT` in `.env.platform` and rerun.
+
+### Phase 2: Production Recommendations
+- Use enterprise identity provider federation (Microsoft Entra ID or equivalent) as upstream identity where possible.
+- Run Keycloak outside the platform workload blast radius (separate namespace minimum, preferably separate cluster).
+- Use managed PostgreSQL for Keycloak state, with automated backups and tested restore procedures.
+- Use TLS everywhere (ingress + trusted certs), and avoid wildcard redirect URIs in production.
+- Disable default/test credentials and rotate all bootstrap secrets after initial setup.
+- Use strict client scopes and claim mapping (email, groups, roles) for least-privilege access.
+- Integrate Kubernetes secrets with Azure Key Vault/CSI instead of long-lived literals in env files.
+- Add monitoring and alerting for auth failures, token issuance failures, and admin events.

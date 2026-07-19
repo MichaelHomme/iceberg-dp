@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: polaris-config
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: polaris
@@ -19,12 +19,27 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: trino-config
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: trino
 data:
-{{- range $k, $v := .Values.trino.config }}
+  config.properties: |
+{{ index .Values.trino.config "config.properties" | indent 4 }}
+{{- if .Values.trino.oidc.enabled }}
+{{- $oidcIssuer := required "trino.oidc.issuer is required when trino.oidc.enabled=true" .Values.trino.oidc.issuer }}
+{{- $oidcClientID := required "trino.oidc.clientId is required when trino.oidc.enabled=true" .Values.trino.oidc.clientId }}
+    http-server.authentication.type=oauth2
+    http-server.authentication.oauth2.issuer={{ $oidcIssuer }}
+    http-server.authentication.oauth2.client-id={{ $oidcClientID }}
+    http-server.authentication.oauth2.client-secret=${ENV:TRINO_OAUTH2_CLIENT_SECRET}
+    http-server.authentication.oauth2.scopes={{ .Values.trino.oidc.scopes }}
+    http-server.authentication.oauth2.principal-field={{ .Values.trino.oidc.principalField }}
+    web-ui.authentication.type=oauth2
+{{- end }}
+  jvm.config: |
+{{ index .Values.trino.config "jvm.config" | indent 4 }}
+{{- range $k, $v := .Values.trino.additionalConfigFiles }}
   {{ $k }}: |
 {{ $v | indent 4 }}
 {{- end }}
@@ -36,7 +51,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: superset-config
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: superset
@@ -53,7 +68,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: airflow-config
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: airflow

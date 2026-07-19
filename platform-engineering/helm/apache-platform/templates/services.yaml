@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: polaris
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: polaris
@@ -22,7 +22,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: trino
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: trino
@@ -41,7 +41,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: superset
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: superset
@@ -60,7 +60,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: airflow-web
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: airflow

@@ -16,16 +16,105 @@ trino:
   image: trinodb/trino:457
   service:
     port: 8080
+  oidc:
+    enabled: false
+    issuer: ""
+    clientId: ""
+    scopes: "openid,email,profile"
+    principalField: "email"
+    secretName: "trino-oidc-secret"
+    secretKey: "client-secret"
   config:
     config.properties: |
       coordinator=true
       node-scheduler.include-coordinator=true
       http-server.http.port=8080
       discovery.uri=http://trino:8080
+    access-control.properties: |
+      access-control.name=file
+      security.config-file=/etc/trino/rules.json
+    rules.json: |
+      {
+        "catalogs": [
+          {
+            "user": "michael.homme@fb.no",
+            "catalog": ".*",
+            "allow": "all"
+          },
+          {
+            "user": "alexander.field.fb.no",
+            "catalog": ".*",
+            "allow": "all"
+          },
+          {
+            "user": "olav.syse@fb.no",
+            "catalog": ".*",
+            "allow": "read-only"
+          }
+        ],
+        "schemas": [
+          {
+            "user": "michael.homme@fb.no",
+            "catalog": ".*",
+            "schema": ".*",
+            "owner": true
+          },
+          {
+            "user": "alexander.field.fb.no",
+            "catalog": ".*",
+            "schema": "(bronze|silver|gold)",
+            "owner": true
+          },
+          {
+            "user": "olav.syse@fb.no",
+            "catalog": ".*",
+            "schema": "gold",
+            "owner": false
+          }
+        ],
+        "tables": [
+          {
+            "user": "michael.homme@fb.no",
+            "catalog": ".*",
+            "schema": ".*",
+            "table": ".*",
+            "privileges": [
+              "SELECT",
+              "INSERT",
+              "UPDATE",
+              "DELETE",
+              "OWNERSHIP",
+              "GRANT_SELECT"
+            ]
+          },
+          {
+            "user": "alexander.field.fb.no",
+            "catalog": ".*",
+            "schema": "(bronze|silver|gold)",
+            "table": ".*",
+            "privileges": [
+              "SELECT",
+              "INSERT",
+              "UPDATE",
+              "DELETE"
+            ]
+          },
+          {
+            "user": "olav.syse@fb.no",
+            "catalog": ".*",
+            "schema": "gold",
+            "table": ".*",
+            "privileges": [
+              "SELECT"
+            ]
+          }
+        ]
+      }
     jvm.config: |
       -server
       -Xmx2G
       -XX:+UseG1GC
+  additionalConfigFiles: {}
 
 superset:
   enabled: true

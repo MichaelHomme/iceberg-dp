@@ -58,6 +58,14 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: {{ .Values.trino.service.port }}
+{{- if .Values.trino.oidc.enabled }}
+          env:
+            - name: TRINO_OAUTH2_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.trino.oidc.secretName }}
+                  key: {{ .Values.trino.oidc.secretKey }}
+{{- end }}
           volumeMounts:
             - name: trino-config
               mountPath: /etc/trino
@@ -78,7 +86,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: superset
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: superset
@@ -131,7 +139,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: airflow-web
-  namespace: {{ .Values.global.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "apache-platform.labels" . | indent 4 }}
     app.kubernetes.io/name: airflow
