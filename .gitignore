@@ -43,6 +43,7 @@ terraform.rc
 
 # Terraform plan artifacts
 *.tfplan
+tfplan
 plan.out
 
 # Kubernetes and Helm
