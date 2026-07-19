@@ -1,4 +1,4 @@
-name: "icberg_dbt"
+name: "frigg_dbt"
 version: "1.0.0"
 config-version: 2
 
@@ -16,6 +16,6 @@ clean-targets:
   - "dbt_packages"
 
 models:
-  icberg_dbt:
+  frigg_dbt:
     staging:
       +materialized: view
