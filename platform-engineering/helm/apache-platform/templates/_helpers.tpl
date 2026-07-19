@@ -9,5 +9,5 @@
 {{- define "apache-platform.labels" -}}
 app.kubernetes.io/managed-by: Helm
 app.kubernetes.io/part-of: apache-platform
-platform.icberg/component: data-platform
+platform.frigg/component: data-platform
 {{- end -}}

@@ -1,4 +1,4 @@
-# icberg-dp
+# frigg-dp
 
 Open-source data platform monorepo for Azure AKS, organized by engineering ownership and reproducible workflows.
 

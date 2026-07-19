@@ -1,4 +1,4 @@
-# Copilot Instructions For icberg-dp
+# Copilot Instructions For frigg-dp
 
 ## Scope
 These instructions apply to this monorepo and all subfolders.

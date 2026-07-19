@@ -41,7 +41,7 @@ variable "user_vm_subnet_cidr" {
 variable "aks_name" {
   description = "AKS cluster name."
   type        = string
-  default     = "icberg-dev-aks"
+  default     = "frigg-dev-aks"
 }
 
 variable "kubernetes_version" {
@@ -99,6 +99,6 @@ variable "tags" {
   description = "Common tags applied to resources."
   type        = map(string)
   default = {
-    project = "icberg-dp"
+    project = "frigg-dp"
   }
 }
