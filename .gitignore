@@ -41,6 +41,10 @@ override.tf.json
 .terraformrc
 terraform.rc
 
+# Terraform local/sensitive config
+backend.hcl
+terraform.tfvars
+
 # Terraform plan artifacts
 *.tfplan
 tfplan
