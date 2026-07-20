@@ -158,9 +158,28 @@ spec:
         - name: airflow
           image: {{ .Values.airflow.image }}
           imagePullPolicy: IfNotPresent
-          command: ["bash", "-c", "airflow db init && airflow webserver"]
+          command: ["bash", "-c", "printf '%s\n' '{\"admin\":\"admin\"}' > /opt/airflow/simple_auth_manager_passwords.json && airflow db migrate && exec airflow api-server"]
           ports:
             - containerPort: {{ .Values.airflow.service.port }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.airflow.service.port }}
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /api/v2/monitor/health
+              port: {{ .Values.airflow.service.port }}
+            periodSeconds: 10
+            initialDelaySeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/v2/monitor/health
+              port: {{ .Values.airflow.service.port }}
+            periodSeconds: 20
+            initialDelaySeconds: 20
+            failureThreshold: 3
           envFrom:
             - configMapRef:
                 name: airflow-config
