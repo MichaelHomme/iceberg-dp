@@ -174,6 +174,36 @@ kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.c
 	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=olav.syse@fb.no
 ```
 
+### 3b. Validate Polaris auth with a Keycloak bearer token
+Keep Keycloak and Polaris port-forwards active, then request a token and call Polaris.
+
+Get the OIDC client secret from Kubernetes:
+```bash
+export TRINO_CLIENT_SECRET=$(kubectl -n frigg-pot-platform get secret trino-oidc-secret -o jsonpath='{.data.client-secret}' | base64 -d)
+```
+
+Set a realm user and get an access token:
+```bash
+export KC_USER="michael.homme@fb.no"
+export KC_PASS="michaelhomme123!"
+
+export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/frigg-data-platform/protocol/openid-connect/token" \
+	-H "Content-Type: application/x-www-form-urlencoded" \
+	-d "grant_type=password" \
+	-d "client_id=trino" \
+	--data-urlencode "client_secret=${TRINO_CLIENT_SECRET}" \
+	--data-urlencode "username=${KC_USER}" \
+	--data-urlencode "password=${KC_PASS}" | jq -r '.access_token')
+
+echo "${TOKEN}" | cut -c1-30
+```
+
+Call Polaris with the bearer token (unauthenticated call should return 401, authenticated call should pass auth):
+```bash
+curl -i http://localhost:8181/api/catalog/v1/config
+curl -i -H "Authorization: Bearer ${TOKEN}" http://localhost:8181/api/catalog/v1/config
+```
+
 ### 4. Create catalog and medallion schemas in Trino
 Pick a catalog name (example: `lakehouse`) and set it once for the session:
 ```bash
