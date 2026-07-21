@@ -14,6 +14,22 @@ node_vm_size              = "Standard_D4s_v5"
 node_count_min            = 2
 node_count_max            = 6
 private_cluster_enabled   = false
+oidc_issuer_enabled       = true
+workload_identity_enabled = true
+
+workload_identity_namespace   = "frigg-pot-platform"
+polaris_identity_name         = "frigg-dev-polaris-mi"
+trino_identity_name           = "frigg-dev-trino-mi"
+airflow_identity_name         = "frigg-dev-airflow-mi"
+polaris_service_account_name  = "polaris-sa"
+trino_service_account_name    = "trino-sa"
+airflow_service_account_name  = "airflow-sa"
+polaris_storage_blob_role_enabled = true
+trino_storage_blob_role_enabled   = true
+airflow_storage_blob_role_enabled = false
+polaris_storage_blob_role         = "Storage Blob Data Contributor"
+trino_storage_blob_role           = "Storage Blob Data Contributor"
+airflow_storage_blob_role         = "Storage Blob Data Reader"
 
 acr_name                  = "friggdevacr001"
 key_vault_name            = "frigg-dev-kv-001"

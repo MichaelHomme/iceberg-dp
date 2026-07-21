@@ -16,6 +16,13 @@ HELM_CHART_PATH="${HELM_CHART_PATH:-platform-engineering/helm/apache-platform}"
 ENABLE_GATEKEEPER="${ENABLE_GATEKEEPER:-false}"
 GATEKEEPER_RELEASE_NAME="${GATEKEEPER_RELEASE_NAME:-gatekeeper}"
 GATEKEEPER_NAMESPACE="${GATEKEEPER_NAMESPACE:-gatekeeper-system}"
+POLARIS_AZURE_ENABLED="${POLARIS_AZURE_ENABLED:-false}"
+POLARIS_AZURE_CREDENTIALS_SECRET_NAME="${POLARIS_AZURE_CREDENTIALS_SECRET_NAME:-polaris-azure-credentials}"
+POLARIS_AZURE_TENANT_ID="${POLARIS_AZURE_TENANT_ID:-}"
+POLARIS_AZURE_CLIENT_ID="${POLARIS_AZURE_CLIENT_ID:-}"
+POLARIS_AZURE_CLIENT_SECRET="${POLARIS_AZURE_CLIENT_SECRET:-}"
+POLARIS_CATALOG_DEFAULT_BASE_LOCATION="${POLARIS_CATALOG_DEFAULT_BASE_LOCATION:-}"
+POLARIS_BOOTSTRAP_CREDENTIALS="${POLARIS_BOOTSTRAP_CREDENTIALS:-}"
 AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP:-}"
 AKS_NAME="${AKS_NAME:-}"
 
@@ -88,9 +95,40 @@ else
   echo "Skipping Gatekeeper install and OPA constraints (ENABLE_GATEKEEPER=${ENABLE_GATEKEEPER})"
 fi
 
+if [[ "$POLARIS_AZURE_ENABLED" == "true" ]]; then
+  if [[ -z "$POLARIS_AZURE_TENANT_ID" || -z "$POLARIS_AZURE_CLIENT_ID" || -z "$POLARIS_AZURE_CLIENT_SECRET" ]]; then
+    echo "POLARIS_AZURE_ENABLED=true requires POLARIS_AZURE_TENANT_ID, POLARIS_AZURE_CLIENT_ID, and POLARIS_AZURE_CLIENT_SECRET"
+    exit 1
+  fi
+
+  echo "Creating/updating Polaris Azure credentials secret: $POLARIS_AZURE_CREDENTIALS_SECRET_NAME"
+  kubectl -n "$PLATFORM_NAMESPACE" create secret generic "$POLARIS_AZURE_CREDENTIALS_SECRET_NAME" \
+    --from-literal=AZURE_TENANT_ID="$POLARIS_AZURE_TENANT_ID" \
+    --from-literal=AZURE_CLIENT_ID="$POLARIS_AZURE_CLIENT_ID" \
+    --from-literal=AZURE_CLIENT_SECRET="$POLARIS_AZURE_CLIENT_SECRET" \
+    --dry-run=client -o yaml | kubectl apply -f -
+fi
+
+HELM_ARGS=(
+  --namespace "$PLATFORM_NAMESPACE"
+  --create-namespace
+)
+
+if [[ "$POLARIS_AZURE_ENABLED" == "true" ]]; then
+  HELM_ARGS+=(--set polaris.azure.enabled=true)
+  HELM_ARGS+=(--set polaris.azure.credentialsSecretName="$POLARIS_AZURE_CREDENTIALS_SECRET_NAME")
+fi
+
+if [[ -n "$POLARIS_CATALOG_DEFAULT_BASE_LOCATION" ]]; then
+  HELM_ARGS+=(--set-string polaris.config.POLARIS_CATALOG_DEFAULT_BASE_LOCATION="$POLARIS_CATALOG_DEFAULT_BASE_LOCATION")
+fi
+
+if [[ -n "$POLARIS_BOOTSTRAP_CREDENTIALS" ]]; then
+  HELM_ARGS+=(--set-string polaris.config.POLARIS_BOOTSTRAP_CREDENTIALS="$POLARIS_BOOTSTRAP_CREDENTIALS")
+fi
+
 echo "Deploying Apache platform chart"
 helm upgrade --install "$HELM_RELEASE_NAME" "$REPO_ROOT/$HELM_CHART_PATH" \
-  --namespace "$PLATFORM_NAMESPACE" \
-  --create-namespace
+  "${HELM_ARGS[@]}"
 
 echo "Deployment complete"

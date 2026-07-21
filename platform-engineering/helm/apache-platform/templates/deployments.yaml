@@ -16,7 +16,13 @@ spec:
       labels:
 {{ include "apache-platform.labels" . | indent 8 }}
         app.kubernetes.io/name: polaris
+{{- if .Values.polaris.managedIdentity.enabled }}
+        azure.workload.identity/use: "true"
+{{- end }}
     spec:
+{{- if .Values.polaris.managedIdentity.enabled }}
+      serviceAccountName: {{ .Values.polaris.managedIdentity.serviceAccountName }}
+{{- end }}
       containers:
         - name: polaris
           image: {{ .Values.polaris.image }}
@@ -26,6 +32,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: polaris-config
+{{- if .Values.polaris.azure.enabled }}
+            - secretRef:
+                name: {{ required "polaris.azure.credentialsSecretName is required when polaris.azure.enabled=true" .Values.polaris.azure.credentialsSecretName }}
+{{- end }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           securityContext:
@@ -51,7 +61,13 @@ spec:
       labels:
 {{ include "apache-platform.labels" . | indent 8 }}
         app.kubernetes.io/name: trino
+{{- if .Values.trino.managedIdentity.enabled }}
+        azure.workload.identity/use: "true"
+{{- end }}
     spec:
+{{- if .Values.trino.managedIdentity.enabled }}
+      serviceAccountName: {{ .Values.trino.managedIdentity.serviceAccountName }}
+{{- end }}
       containers:
         - name: trino
           image: {{ .Values.trino.image }}
@@ -153,7 +169,13 @@ spec:
       labels:
 {{ include "apache-platform.labels" . | indent 8 }}
         app.kubernetes.io/name: airflow
+{{- if .Values.airflow.managedIdentity.enabled }}
+        azure.workload.identity/use: "true"
+{{- end }}
     spec:
+{{- if .Values.airflow.managedIdentity.enabled }}
+      serviceAccountName: {{ .Values.airflow.managedIdentity.serviceAccountName }}
+{{- end }}
       containers:
         - name: airflow
           image: {{ .Values.airflow.image }}

@@ -80,6 +80,96 @@ variable "private_cluster_enabled" {
   default     = false
 }
 
+variable "oidc_issuer_enabled" {
+  description = "Enable AKS OIDC issuer. Required for workload identity federation."
+  type        = bool
+  default     = true
+}
+
+variable "workload_identity_enabled" {
+  description = "Enable AKS workload identity."
+  type        = bool
+  default     = true
+}
+
+variable "workload_identity_namespace" {
+  description = "Kubernetes namespace that hosts workload identity-enabled service accounts."
+  type        = string
+  default     = "frigg-pot-platform"
+}
+
+variable "polaris_identity_name" {
+  description = "User-assigned managed identity name for Polaris."
+  type        = string
+  default     = "frigg-dev-polaris-mi"
+}
+
+variable "trino_identity_name" {
+  description = "User-assigned managed identity name for Trino."
+  type        = string
+  default     = "frigg-dev-trino-mi"
+}
+
+variable "airflow_identity_name" {
+  description = "User-assigned managed identity name for Airflow."
+  type        = string
+  default     = "frigg-dev-airflow-mi"
+}
+
+variable "polaris_service_account_name" {
+  description = "Kubernetes service account name used by Polaris."
+  type        = string
+  default     = "polaris-sa"
+}
+
+variable "trino_service_account_name" {
+  description = "Kubernetes service account name used by Trino."
+  type        = string
+  default     = "trino-sa"
+}
+
+variable "airflow_service_account_name" {
+  description = "Kubernetes service account name used by Airflow."
+  type        = string
+  default     = "airflow-sa"
+}
+
+variable "polaris_storage_blob_role_enabled" {
+  description = "Assign Azure Blob data-plane role for Polaris identity on the data storage account."
+  type        = bool
+  default     = true
+}
+
+variable "trino_storage_blob_role_enabled" {
+  description = "Assign Azure Blob data-plane role for Trino identity on the data storage account."
+  type        = bool
+  default     = true
+}
+
+variable "airflow_storage_blob_role_enabled" {
+  description = "Assign Azure Blob data-plane role for Airflow identity on the data storage account."
+  type        = bool
+  default     = false
+}
+
+variable "polaris_storage_blob_role" {
+  description = "Azure role assigned to Polaris identity for Blob access."
+  type        = string
+  default     = "Storage Blob Data Contributor"
+}
+
+variable "trino_storage_blob_role" {
+  description = "Azure role assigned to Trino identity for Blob access."
+  type        = string
+  default     = "Storage Blob Data Contributor"
+}
+
+variable "airflow_storage_blob_role" {
+  description = "Azure role assigned to Airflow identity for Blob access."
+  type        = string
+  default     = "Storage Blob Data Reader"
+}
+
 variable "acr_name" {
   description = "ACR name. Must be globally unique and 5-50 lowercase alphanumeric characters."
   type        = string

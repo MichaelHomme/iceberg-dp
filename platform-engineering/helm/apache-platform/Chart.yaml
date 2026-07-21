@@ -2,5 +2,5 @@ apiVersion: v2
 name: apache-platform
 description: Apache data platform workloads with ConfigMap-based runtime configuration.
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "1.0.0"

@@ -25,6 +25,9 @@ resource "azurerm_kubernetes_cluster" "main" {
     load_balancer_sku = "standard"
   }
 
+  oidc_issuer_enabled       = var.oidc_issuer_enabled
+  workload_identity_enabled = var.workload_identity_enabled
+
   private_cluster_enabled = var.private_cluster_enabled
 
   tags = local.common_tags

@@ -12,6 +12,7 @@ This folder contains Kubernetes and Helm assets to deploy core Apache data platf
 - `helm/apache-platform/`: umbrella Helm chart for platform workloads.
 - `opa/gatekeeper/`: Gatekeeper ConstraintTemplates and Constraints.
 - `scripts/deploy_platform.sh`: installs Gatekeeper, applies OPA policies, and deploys Helm releases.
+- `scripts/setup_polaris_azure.sh`: creates/updates Polaris Azure credential secret from environment variables.
 - `scripts/validate_platform.sh`: lints and renders Helm templates and validates policy objects.
 
 ## Configuration Model
@@ -44,6 +45,36 @@ cp platform-engineering/.env.platform.example platform-engineering/.env.platform
 - Trino enforces query-time access controls against those medallion layers.
 - OPA/Gatekeeper is kept for Kubernetes workload policy and platform guardrails, not as the primary data-plane authorization engine.
 
+## Polaris With Azure Blob (ADLS Gen2)
+For production-style Azure storage wiring, follow Apache Polaris 1.6 guidance for service principal credentials and `abfss://` base locations.
+
+1. Set and export Polaris Azure values in `platform-engineering/.env.platform`:
+   - `POLARIS_AZURE_ENABLED=true`
+   - `POLARIS_AZURE_CREDENTIALS_SECRET_NAME=polaris-azure-credentials`
+   - `POLARIS_AZURE_TENANT_ID=<tenant-id>`
+   - `POLARIS_AZURE_CLIENT_ID=<client-id>`
+   - `POLARIS_AZURE_CLIENT_SECRET=<client-secret>`
+   - `POLARIS_CATALOG_DEFAULT_BASE_LOCATION=abfss://warehouse@<storage-account>.dfs.core.windows.net/prod/`
+
+
+2. Create/update the Kubernetes secret from your exported environment:
+```bash
+set -a
+source platform-engineering/.env.platform
+set +a
+./platform-engineering/scripts/setup_polaris_azure.sh
+```
+
+3. Deploy/redeploy the platform. The deploy script reads those env vars and applies Helm overrides automatically:
+```bash
+./platform-engineering/scripts/deploy_platform.sh
+```
+
+Notes:
+- Use `abfss://` with the `dfs.core.windows.net` endpoint for ADLS Gen2.
+- Do not commit service principal secrets to git.
+- Polaris does not create the blob container; create it ahead of time.
+
 ## Trino OIDC (Keycloak-Compatible)
 ### Phase 1: Dev (In-Cluster Keycloak)
 1. Configure `platform-engineering/.env.platform` with Keycloak and user bootstrap values.
@@ -61,7 +92,7 @@ cp platform-engineering/.env.platform.example platform-engineering/.env.platform
 Notes:
 - Trino uses `principal-field=email`, so access policy rules map directly to user emails.
 - Keep client secrets only in Kubernetes Secrets, not in committed values files.
-- If Keycloak install times out, tune `KEYCLOAK_IMAGE_TAG`, `KEYCLOAK_POSTGRESQL_IMAGE_TAG`, and `KEYCLOAK_HELM_TIMEOUT` in `.env.platform` and rerun.
+- The bootstrap script defaults to `bitnamilegacy` repositories on Docker Hub for Keycloak/PostgreSQL images, with chart-default tags (latest chart-compatible). Set `KEYCLOAK_IMAGE_*` and `KEYCLOAK_POSTGRESQL_IMAGE_*` only when you need to pin or override.
 
 ### Phase 2: Production Recommendations
 - Use enterprise identity provider federation (Microsoft Entra ID or equivalent) as upstream identity where possible.
@@ -72,3 +103,152 @@ Notes:
 - Use strict client scopes and claim mapping (email, groups, roles) for least-privilege access.
 - Integrate Kubernetes secrets with Azure Key Vault/CSI instead of long-lived literals in env files.
 - Add monitoring and alerting for auth failures, token issuance failures, and admin events.
+
+## Testing - TRINO, POLARIS and KEYCLOACK
+Use this runbook after deployment to verify Keycloak, Polaris, Trino, and medallion access behavior.
+
+### 1. Check pods are running
+```bash
+kubectl -n frigg get po,svc | rg 'keycloak|postgresql'
+kubectl -n frigg-pot-platform get po,svc | rg 'polaris|trino'
+```
+
+### 2. Port-forward services locally
+Run each command in a separate terminal.
+
+```bash
+kubectl -n frigg port-forward svc/keycloak 8081:80
+```
+
+```bash
+kubectl -n frigg-pot-platform port-forward svc/polaris 8181:8181
+```
+
+```bash
+kubectl -n frigg-pot-platform port-forward svc/trino 8080:8080
+```
+
+Smoke checks:
+```bash
+curl -fsS http://localhost:8081/realms/master/.well-known/openid-configuration | jq '.issuer'
+curl -s -o /dev/null -w 'polaris_http_code=%{http_code}\n' http://localhost:8181/
+curl -fsS http://localhost:8080/v1/info | jq '{version: .nodeVersion.version, state: .state}'
+```
+
+### 3. Ensure Keycloak realm/client/users exist (idempotent)
+If not already created, rerun bootstrap:
+```bash
+./platform-engineering/scripts/setup_keycloak_phase1.sh
+```
+
+Retrieve current Keycloak/Trino credentials from Kubernetes secrets:
+```bash
+echo "Keycloak admin user: admin"
+echo -n "Keycloak admin password: "
+kubectl -n frigg get secret keycloak -o jsonpath='{.data.admin-password}' | base64 -d
+echo
+
+echo -n "Trino OIDC client secret: "
+kubectl -n frigg-pot-platform get secret trino-oidc-secret -o jsonpath='{.data.client-secret}' | base64 -d
+echo
+```
+
+Optional checks inside cluster:
+```bash
+KEYCLOAK_POD=$(kubectl -n frigg get pod -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].metadata.name}')
+
+kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+	/opt/bitnami/keycloak/bin/kcadm.sh config credentials \
+	--server http://127.0.0.1:8080 --realm master --user admin --password admin-password
+
+kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+	/opt/bitnami/keycloak/bin/kcadm.sh get realms/frigg-data-platform
+
+kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=michael.homme@fb.no
+
+kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=alexander.field.fb.no
+
+kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=olav.syse@fb.no
+```
+
+### 4. Create catalog and medallion schemas in Trino
+Pick a catalog name (example: `lakehouse`) and set it once for the session:
+```bash
+CATALOG=lakehouse
+```
+
+Create catalog and schemas:
+```bash
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE CATALOG IF NOT EXISTS ${CATALOG} USING iceberg"
+
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE SCHEMA IF NOT EXISTS ${CATALOG}.bronze"
+
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE SCHEMA IF NOT EXISTS ${CATALOG}.silver"
+
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE SCHEMA IF NOT EXISTS ${CATALOG}.gold"
+```
+
+### 5. Insert test data across bronze, silver, gold
+```bash
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE TABLE IF NOT EXISTS ${CATALOG}.bronze.orders_raw (order_id BIGINT, amount DOUBLE, created_at TIMESTAMP)"
+
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "INSERT INTO ${CATALOG}.bronze.orders_raw VALUES (1, 100.5, current_timestamp), (2, 250.0, current_timestamp), (3, 90.2, current_timestamp)"
+
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE TABLE IF NOT EXISTS ${CATALOG}.silver.orders_clean AS SELECT order_id, amount, created_at FROM ${CATALOG}.bronze.orders_raw"
+
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "CREATE TABLE IF NOT EXISTS ${CATALOG}.gold.orders_agg AS SELECT count(*) AS order_count, sum(amount) AS total_amount FROM ${CATALOG}.silver.orders_clean"
+```
+
+### 6. Test access by user
+Admin (should access all schemas):
+```bash
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: michael.homme@fb.no' \
+	--data-binary "SELECT * FROM ${CATALOG}.gold.orders_agg"
+```
+
+Engineer (should access bronze/silver/gold):
+```bash
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: alexander.field.fb.no' \
+	--data-binary "SELECT * FROM ${CATALOG}.silver.orders_clean LIMIT 10"
+```
+
+Analyst (should read gold only):
+```bash
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: olav.syse@fb.no' \
+	--data-binary "SELECT * FROM ${CATALOG}.gold.orders_agg"
+```
+
+Expected deny test (analyst querying bronze should fail):
+```bash
+curl -sS -X POST http://localhost:8080/v1/statement \
+	-H 'X-Trino-User: olav.syse@fb.no' \
+	--data-binary "SELECT * FROM ${CATALOG}.bronze.orders_raw"
+```
+
+### 7. Optional: run SQL interactively from Trino pod
+```bash
+TRINO_POD=$(kubectl -n frigg-pot-platform get pod -l app.kubernetes.io/name=trino -o jsonpath='{.items[0].metadata.name}')
+kubectl -n frigg-pot-platform exec -it "$TRINO_POD" -- trino --server http://localhost:8080 --user michael.homme@fb.no
+```

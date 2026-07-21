@@ -16,8 +16,12 @@ KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-identity}"
 KEYCLOAK_RELEASE_NAME="${KEYCLOAK_RELEASE_NAME:-keycloak}"
 KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-change-me-admin-password}"
-KEYCLOAK_IMAGE_TAG="${KEYCLOAK_IMAGE_TAG:-26.3.3-debian-12}"
-KEYCLOAK_POSTGRESQL_IMAGE_TAG="${KEYCLOAK_POSTGRESQL_IMAGE_TAG:-17.6.0-debian-12}"
+KEYCLOAK_IMAGE_REGISTRY="${KEYCLOAK_IMAGE_REGISTRY:-docker.io}"
+KEYCLOAK_IMAGE_REPOSITORY="${KEYCLOAK_IMAGE_REPOSITORY:-bitnamilegacy/keycloak}"
+KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY="${KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY:-docker.io}"
+KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY="${KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY:-bitnamilegacy/postgresql}"
+KEYCLOAK_IMAGE_TAG="${KEYCLOAK_IMAGE_TAG:-}"
+KEYCLOAK_POSTGRESQL_IMAGE_TAG="${KEYCLOAK_POSTGRESQL_IMAGE_TAG:-}"
 KEYCLOAK_HELM_TIMEOUT="${KEYCLOAK_HELM_TIMEOUT:-20m}"
 
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-frigg-data-platform}"
@@ -45,18 +49,37 @@ echo "Installing Keycloak (Phase 1)"
 helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true
 helm repo update >/dev/null
 
+HELM_ARGS=(
+  --namespace "$KEYCLOAK_NAMESPACE"
+  --create-namespace
+  --reset-values
+  --set auth.adminUser="$KEYCLOAK_ADMIN_USER"
+  --set auth.adminPassword="$KEYCLOAK_ADMIN_PASSWORD"
+  --set image.registry="$KEYCLOAK_IMAGE_REGISTRY"
+  --set image.repository="$KEYCLOAK_IMAGE_REPOSITORY"
+  --set postgresql.image.registry="$KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY"
+  --set postgresql.image.repository="$KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY"
+  --set proxy=edge
+  --set postgresql.enabled=true
+  --wait
+  --timeout "$KEYCLOAK_HELM_TIMEOUT"
+)
+
+if [[ -n "$KEYCLOAK_IMAGE_TAG" ]]; then
+  HELM_ARGS+=(--set image.tag="$KEYCLOAK_IMAGE_TAG")
+else
+  echo "Using chart default Keycloak image tag (latest compatible)"
+fi
+
+if [[ -n "$KEYCLOAK_POSTGRESQL_IMAGE_TAG" ]]; then
+  HELM_ARGS+=(--set postgresql.image.tag="$KEYCLOAK_POSTGRESQL_IMAGE_TAG")
+else
+  echo "Using chart default PostgreSQL image tag (latest compatible)"
+fi
+
 set +e
 helm upgrade --install "$KEYCLOAK_RELEASE_NAME" bitnami/keycloak \
-  --namespace "$KEYCLOAK_NAMESPACE" \
-  --create-namespace \
-  --set auth.adminUser="$KEYCLOAK_ADMIN_USER" \
-  --set auth.adminPassword="$KEYCLOAK_ADMIN_PASSWORD" \
-  --set image.tag="$KEYCLOAK_IMAGE_TAG" \
-  --set postgresql.image.tag="$KEYCLOAK_POSTGRESQL_IMAGE_TAG" \
-  --set proxy=edge \
-  --set postgresql.enabled=true \
-  --wait \
-  --timeout "$KEYCLOAK_HELM_TIMEOUT"
+  "${HELM_ARGS[@]}"
 ret=$?
 set -e
 
@@ -72,7 +95,7 @@ echo "Waiting for Keycloak pod"
 KEYCLOAK_POD="$(kubectl -n "$KEYCLOAK_NAMESPACE" get pod -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].metadata.name}')"
 
 exec_kcadm() {
-  kubectl -n "$KEYCLOAK_NAMESPACE" exec "$KEYCLOAK_POD" -- /opt/bitnami/keycloak/bin/kcadm.sh "$@"
+  kubectl -n "$KEYCLOAK_NAMESPACE" exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config /opt/bitnami/keycloak/bin/kcadm.sh "$@"
 }
 
 echo "Authenticating Keycloak admin API"
@@ -84,32 +107,32 @@ if ! exec_kcadm get "realms/$KEYCLOAK_REALM" >/dev/null 2>&1; then
 fi
 
 echo "Creating OIDC client if missing: $KEYCLOAK_CLIENT_ID"
-if ! exec_kcadm get clients -r "$KEYCLOAK_REALM" -q clientId="$KEYCLOAK_CLIENT_ID" | grep -q '"id"'; then
-  exec_kcadm create clients -r "$KEYCLOAK_REALM" \
-    -s clientId="$KEYCLOAK_CLIENT_ID" \
-    -s enabled=true \
-    -s protocol=openid-connect \
-    -s publicClient=false \
-    -s directAccessGrantsEnabled=true \
-    -s standardFlowEnabled=true \
-    -s 'redirectUris=["*"]' \
-    -s 'webOrigins=["*"]' \
-    -s secret="$KEYCLOAK_CLIENT_SECRET" >/dev/null
-fi
+exec_kcadm create clients -r "$KEYCLOAK_REALM" \
+  -s clientId="$KEYCLOAK_CLIENT_ID" \
+  -s enabled=true \
+  -s protocol=openid-connect \
+  -s publicClient=false \
+  -s directAccessGrantsEnabled=true \
+  -s standardFlowEnabled=true \
+  -s 'redirectUris=["*"]' \
+  -s 'webOrigins=["*"]' \
+  -s secret="$KEYCLOAK_CLIENT_SECRET" >/dev/null 2>&1 || true
 
 create_or_update_user() {
   local email="$1"
   local password="$2"
 
-  if ! exec_kcadm get users -r "$KEYCLOAK_REALM" -q username="$email" | grep -q '"id"'; then
+  local user_id
+  user_id="$(exec_kcadm get users -r "$KEYCLOAK_REALM" -q username="$email" --fields id --format csv | sed -n '2p' | tr -d '"' || true)"
+
+  if [[ -z "$user_id" ]]; then
     exec_kcadm create users -r "$KEYCLOAK_REALM" \
       -s username="$email" \
       -s email="$email" \
       -s enabled=true >/dev/null
+    user_id="$(exec_kcadm get users -r "$KEYCLOAK_REALM" -q username="$email" --fields id --format csv | sed -n '2p' | tr -d '"' || true)"
   fi
 
-  local user_id
-  user_id="$(exec_kcadm get users -r "$KEYCLOAK_REALM" -q username="$email" --fields id --format csv | tail -n 1)"
   exec_kcadm set-password -r "$KEYCLOAK_REALM" --userid "$user_id" --new-password "$password" >/dev/null
 }
 

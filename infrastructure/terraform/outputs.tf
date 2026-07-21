@@ -33,6 +33,52 @@ output "aks_id" {
   value       = azurerm_kubernetes_cluster.main.id
 }
 
+output "aks_oidc_issuer_url" {
+  description = "AKS OIDC issuer URL used for workload identity federation."
+  value       = azurerm_kubernetes_cluster.main.oidc_issuer_url
+}
+
+output "aks_workload_identity_enabled" {
+  description = "Whether AKS workload identity is enabled."
+  value       = azurerm_kubernetes_cluster.main.workload_identity_enabled
+}
+
+output "polaris_identity" {
+  description = "Polaris managed identity metadata for workload identity integration."
+  value = {
+    id                = azurerm_user_assigned_identity.polaris.id
+    client_id         = azurerm_user_assigned_identity.polaris.client_id
+    principal_id      = azurerm_user_assigned_identity.polaris.principal_id
+    service_account   = var.polaris_service_account_name
+    namespace         = var.workload_identity_namespace
+    federated_subject = azurerm_federated_identity_credential.polaris.subject
+  }
+}
+
+output "trino_identity" {
+  description = "Trino managed identity metadata for workload identity integration."
+  value = {
+    id                = azurerm_user_assigned_identity.trino.id
+    client_id         = azurerm_user_assigned_identity.trino.client_id
+    principal_id      = azurerm_user_assigned_identity.trino.principal_id
+    service_account   = var.trino_service_account_name
+    namespace         = var.workload_identity_namespace
+    federated_subject = azurerm_federated_identity_credential.trino.subject
+  }
+}
+
+output "airflow_identity" {
+  description = "Airflow managed identity metadata for workload identity integration."
+  value = {
+    id                = azurerm_user_assigned_identity.airflow.id
+    client_id         = azurerm_user_assigned_identity.airflow.client_id
+    principal_id      = azurerm_user_assigned_identity.airflow.principal_id
+    service_account   = var.airflow_service_account_name
+    namespace         = var.workload_identity_namespace
+    federated_subject = azurerm_federated_identity_credential.airflow.subject
+  }
+}
+
 output "acr_login_server" {
   description = "ACR login server."
   value       = azurerm_container_registry.main.login_server

@@ -4,16 +4,30 @@ polaris:
   enabled: true
   replicas: 1
   image: apache/polaris:1.0.0-incubating
+  managedIdentity:
+    enabled: true
+    createServiceAccount: true
+    serviceAccountName: polaris-sa
+    clientId: "25408145-0989-4adb-a266-d5709c9a5555"
   service:
     port: 8181
+  azure:
+    enabled: false
+    # Secret must contain AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+    credentialsSecretName: ""
   config:
-    POLARIS_BOOTSTRAP_CREDENTIALS: "set-via-secret"
-    POLARIS_CATALOG_DEFAULT_BASE_LOCATION: "s3://warehouse"
+    POLARIS_BOOTSTRAP_CREDENTIALS: "POLARIS,polaris-root,change-me-polaris-root-secret"
+    POLARIS_CATALOG_DEFAULT_BASE_LOCATION: "abfss://datawarehouse@friggdevdata001.dfs.core.windows.net/polaris-catalog/"
 
 trino:
   enabled: true
   replicas: 1
   image: trinodb/trino:483
+  managedIdentity:
+    enabled: true
+    createServiceAccount: true
+    serviceAccountName: trino-sa
+    clientId: "160ec381-105f-4240-87a0-ce6429af9763"
   service:
     port: 8080
   oidc:
@@ -133,6 +147,11 @@ airflow:
   enabled: true
   replicas: 1
   image: apache/airflow:3.3.0
+  managedIdentity:
+    enabled: true
+    createServiceAccount: true
+    serviceAccountName: airflow-sa
+    clientId: "d1927fbb-e2b7-4503-9eb4-9ba7b6b26f3c"
   service:
     port: 8080
   config:
