@@ -12,7 +12,7 @@ fi
 
 DBT_PROJECT_DIR="${DBT_PROJECT_DIR:-data-engineering/dbt}"
 DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-data-engineering/dbt/profiles}"
-DATA_PLATFORM_NAMESPACE="${DATA_PLATFORM_NAMESPACE:-data-platform}"
+DATA_PLATFORM_NAMESPACE="${DATA_PLATFORM_NAMESPACE:-frigg-pot-platform}"
 AIRFLOW_DAGS_CONFIGMAP="${AIRFLOW_DAGS_CONFIGMAP:-airflow-dags}"
 DAG_DIR="$REPO_ROOT/data-engineering/airflow/dags"
 

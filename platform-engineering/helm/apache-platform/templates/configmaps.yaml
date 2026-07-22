@@ -30,12 +30,16 @@ data:
 {{- $oidcIssuer := required "trino.oidc.issuer is required when trino.oidc.enabled=true" .Values.trino.oidc.issuer }}
 {{- $oidcClientID := required "trino.oidc.clientId is required when trino.oidc.enabled=true" .Values.trino.oidc.clientId }}
     http-server.authentication.type=oauth2
+    http-server.process-forwarded=true
+    internal-communication.shared-secret=${ENV:TRINO_INTERNAL_SHARED_SECRET}
+    http-server.authentication.allow-insecure-over-http={{ .Values.trino.oidc.allowInsecureOverHttp }}
     http-server.authentication.oauth2.issuer={{ $oidcIssuer }}
     http-server.authentication.oauth2.client-id={{ $oidcClientID }}
     http-server.authentication.oauth2.client-secret=${ENV:TRINO_OAUTH2_CLIENT_SECRET}
     http-server.authentication.oauth2.scopes={{ .Values.trino.oidc.scopes }}
     http-server.authentication.oauth2.principal-field={{ .Values.trino.oidc.principalField }}
-    web-ui.authentication.type=oauth2
+    web-ui.enabled=true
+    web-ui.authentication.type={{ .Values.trino.oidc.webUiAuthenticationType }}
 {{- end }}
   jvm.config: |
 {{ index .Values.trino.config "jvm.config" | indent 4 }}

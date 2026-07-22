@@ -10,7 +10,7 @@ spec:
         kinds: ["Service", "ConfigMap"]
       - apiGroups: ["apps"]
         kinds: ["Deployment"]
-    namespaces: ["data-platform"]
+    namespaces: ["frigg-pot-platform"]
   parameters:
     labels:
       - app.kubernetes.io/name

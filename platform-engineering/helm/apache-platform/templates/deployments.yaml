@@ -81,6 +81,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.trino.oidc.secretName }}
                   key: {{ .Values.trino.oidc.secretKey }}
+            - name: TRINO_INTERNAL_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.trino.internalCommunication.secretName }}
+                  key: {{ .Values.trino.internalCommunication.secretKey }}
 {{- end }}
           volumeMounts:
             - name: trino-config

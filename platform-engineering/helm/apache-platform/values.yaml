@@ -30,14 +30,31 @@ trino:
     clientId: "160ec381-105f-4240-87a0-ce6429af9763"
   service:
     port: 8080
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: ""
+    tls:
+      enabled: false
+      secretName: ""
   oidc:
     enabled: false
     issuer: ""
     clientId: ""
     scopes: "openid,email,profile"
     principalField: "email"
+    allowInsecureOverHttp: false
+    webUiAuthenticationType: "oauth2"
+    createSecret: false
+    clientSecret: ""
     secretName: "trino-oidc-secret"
     secretKey: "client-secret"
+  internalCommunication:
+    createSecret: false
+    sharedSecret: ""
+    secretName: "trino-internal-communication-secret"
+    secretKey: "shared-secret"
   config:
     config.properties: |
       coordinator=true

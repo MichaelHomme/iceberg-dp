@@ -77,22 +77,128 @@ Notes:
 
 ## Trino OIDC (Keycloak-Compatible)
 ### Phase 1: Dev (In-Cluster Keycloak)
+Terminology used below:
+- Platform namespace: `frigg-pot-platform` for Trino, Polaris, and related Kubernetes resources.
+- Keycloak namespace: `identity` by default for the in-cluster Keycloak Helm release.
+- Keycloak realm: `frigg-data-platform` for OIDC users, clients, and tokens.
+
+You can use either the bootstrap script or the Keycloak UI.
+
+#### Option A: Bootstrap script
 1. Configure `platform-engineering/.env.platform` with Keycloak and user bootstrap values.
 2. Run the Keycloak bootstrap script:
 	- `./platform-engineering/scripts/setup_keycloak_phase1.sh`
 3. Enable OIDC in Helm values (environment-specific override file):
 	- `trino.oidc.enabled: true`
-	- `trino.oidc.issuer: "http://keycloak.identity.svc.cluster.local:8080/realms/frigg-data-platform"`
+	- `trino.oidc.issuer: "http://keycloak.identity.svc.cluster.local/realms/frigg-data-platform"`
 	- `trino.oidc.clientId: "trino"`
+	- `trino.oidc.createSecret: false`
 	- `trino.oidc.secretName: "trino-oidc-secret"`
 	- `trino.oidc.secretKey: "client-secret"`
+	- `trino.internalCommunication.createSecret: false`
+	- `trino.internalCommunication.secretName: "trino-internal-communication-secret"`
+	- `trino.internalCommunication.secretKey: "shared-secret"`
 4. Redeploy the chart:
 	- `helm upgrade --install apache-platform platform-engineering/helm/apache-platform --namespace <platform-namespace> --create-namespace -f <your-override-values>.yaml`
+
+#### Option A2: Helm-managed Kubernetes secret
+If you want Helm to create the Kubernetes secret for Trino, enable the secret template and pass the client secret at deploy time from an untracked override file or `--set-string`:
+
+```yaml
+trino:
+	oidc:
+		enabled: true
+		issuer: "http://keycloak.identity.svc.cluster.local/realms/frigg-data-platform"
+		clientId: "trino"
+		createSecret: true
+		clientSecret: "<your-keycloak-client-secret>"
+		secretName: "trino-oidc-secret"
+		secretKey: "client-secret"
+	internalCommunication:
+		createSecret: true
+		sharedSecret: "<random-long-shared-secret>"
+		secretName: "trino-internal-communication-secret"
+		secretKey: "shared-secret"
+```
+
+Deploy with an untracked local override file:
+
+```bash
+helm upgrade --install apache-platform platform-engineering/helm/apache-platform \
+	--namespace frigg-pot-platform \
+	--create-namespace \
+	-f /path/to/local-oidc-values.yaml
+```
+
+You can also drive the same settings from `platform-engineering/.env.platform` when using `./platform-engineering/scripts/deploy_platform.sh`:
+
+```bash
+TRINO_OIDC_ENABLED=true
+TRINO_OIDC_ISSUER=http://keycloak.identity.svc.cluster.local/realms/frigg-data-platform
+TRINO_OIDC_CLIENT_ID=trino
+TRINO_WEB_UI_AUTHENTICATION_TYPE=insecure
+TRINO_OIDC_CREATE_SECRET=true
+TRINO_OIDC_CLIENT_SECRET=<your-keycloak-client-secret>
+TRINO_OIDC_SECRET_NAME=trino-oidc-secret
+TRINO_OIDC_SECRET_KEY=client-secret
+TRINO_INTERNAL_COMMUNICATION_CREATE_SECRET=true
+TRINO_INTERNAL_COMMUNICATION_SHARED_SECRET=<random-long-shared-secret>
+TRINO_INTERNAL_COMMUNICATION_SECRET_NAME=trino-internal-communication-secret
+TRINO_INTERNAL_COMMUNICATION_SECRET_KEY=shared-secret
+```
+
+#### Option B: Manual Keycloak UI setup
+1. Open the Keycloak admin UI for the in-cluster release.
+2. Create or reuse the realm `frigg-data-platform`.
+3. Create or reuse a client with:
+	- Client ID: `trino`
+	- Protocol: `openid-connect`
+	- Client authentication: enabled
+	- Standard flow: enabled
+	- Direct access grants: enabled
+4. Copy the client secret from the Keycloak UI.
+5. Create or reuse users with usernames matching the Trino access rules:
+	- `michael.homme@fb.no`
+	- `alexander.field.fb.no`
+	- `olav.syse@fb.no`
+6. Create the Kubernetes secret consumed by Trino in the platform namespace:
+	- `kubectl -n frigg-pot-platform create secret generic trino-oidc-secret --from-literal=client-secret='<your-client-secret>' --dry-run=client -o yaml | kubectl apply -f -`
+7. Enable OIDC in Helm values and redeploy the chart as in Option A.
 
 Notes:
 - Trino uses `principal-field=email`, so access policy rules map directly to user emails.
 - Keep client secrets only in Kubernetes Secrets, not in committed values files.
+- The Helm chart reads the Trino OIDC client secret from the Kubernetes secret `trino-oidc-secret`; it does not fetch the secret directly from Keycloak.
+- If `trino.oidc.createSecret=true`, Helm will create `trino-oidc-secret` in the release namespace from `trino.oidc.clientSecret`.
+- Trino requires `internal-communication.shared-secret` whenever authentication is enabled. This chart wires it from Kubernetes secret `trino-internal-communication-secret`.
+- If `trino.internalCommunication.createSecret=true`, Helm will create `trino-internal-communication-secret` from `trino.internalCommunication.sharedSecret`.
+- `TRINO_WEB_UI_AUTHENTICATION_TYPE=insecure` is useful for local HTTP port-forward development; for production behind TLS, prefer `oauth2`.
 - The bootstrap script defaults to `bitnamilegacy` repositories on Docker Hub for Keycloak/PostgreSQL images, with chart-default tags (latest chart-compatible). Set `KEYCLOAK_IMAGE_*` and `KEYCLOAK_POSTGRESQL_IMAGE_*` only when you need to pin or override.
+
+### Step-by-step: set up the Trino client in Keycloak
+1. Port-forward the Keycloak service:
+	- `kubectl -n identity port-forward svc/keycloak 8081:80`
+2. Open `http://localhost:8081` and sign in to the Keycloak admin console.
+3. Create or select the realm `frigg-data-platform`.
+4. Create a new client with client ID `trino`.
+5. Set the client protocol to `openid-connect`.
+6. Enable client authentication so Keycloak issues a client secret.
+7. Enable standard flow.
+8. Enable direct access grants if you want to use the documented password-grant `curl` tests.
+9. Save the client, open the Credentials tab, and copy the client secret.
+10. Create the three users if they do not already exist:
+	- `michael.homme@fb.no`
+	- `alexander.field.fb.no`
+	- `olav.syse@fb.no`
+11. Set a password for each user and disable temporary password mode.
+12. Choose how Trino gets the client secret:
+	- Manual Kubernetes secret: `kubectl -n frigg-pot-platform create secret generic trino-oidc-secret --from-literal=client-secret='<your-client-secret>' --dry-run=client -o yaml | kubectl apply -f -`
+	- Helm-managed secret: deploy the chart with `trino.oidc.createSecret=true` and `trino.oidc.clientSecret='<your-client-secret>'`.
+13. Deploy Trino with OIDC enabled.
+14. Verify the secret exists:
+	- `kubectl -n frigg-pot-platform get secret trino-oidc-secret`
+15. Retrieve the client secret from Kubernetes when needed:
+	- `kubectl -n frigg-pot-platform get secret trino-oidc-secret -o jsonpath='{.data.client-secret}' | base64 -d; echo`
 
 ### Phase 2: Production Recommendations
 - Use enterprise identity provider federation (Microsoft Entra ID or equivalent) as upstream identity where possible.
@@ -109,7 +215,7 @@ Use this runbook after deployment to verify Keycloak, Polaris, Trino, and medall
 
 ### 1. Check pods are running
 ```bash
-kubectl -n frigg get po,svc | rg 'keycloak|postgresql'
+kubectl -n identity get po,svc | rg 'keycloak|postgresql'
 kubectl -n frigg-pot-platform get po,svc | rg 'polaris|trino'
 ```
 
@@ -117,7 +223,7 @@ kubectl -n frigg-pot-platform get po,svc | rg 'polaris|trino'
 Run each command in a separate terminal.
 
 ```bash
-kubectl -n frigg port-forward svc/keycloak 8081:80
+kubectl -n identity port-forward svc/keycloak 8081:80
 ```
 
 ```bash
@@ -136,16 +242,22 @@ curl -fsS http://localhost:8080/v1/info | jq '{version: .nodeVersion.version, st
 ```
 
 ### 3. Ensure Keycloak realm/client/users exist (idempotent)
-If not already created, rerun bootstrap:
+If you are using the bootstrap script and need to reconcile Keycloak objects, rerun:
 ```bash
 ./platform-engineering/scripts/setup_keycloak_phase1.sh
 ```
+
+If you are managing Keycloak manually in the UI, verify instead that:
+- The realm `frigg-data-platform` exists.
+- The client `trino` exists and has a client secret.
+- The Kubernetes secret `trino-oidc-secret` exists in `frigg-pot-platform`.
+- The test users exist with the expected usernames.
 
 Retrieve current Keycloak/Trino credentials from Kubernetes secrets:
 ```bash
 echo "Keycloak admin user: admin"
 echo -n "Keycloak admin password: "
-kubectl -n frigg get secret keycloak -o jsonpath='{.data.admin-password}' | base64 -d
+kubectl -n identity get secret keycloak -o jsonpath='{.data.admin-password}' | base64 -d
 echo
 
 echo -n "Trino OIDC client secret: "
@@ -155,22 +267,22 @@ echo
 
 Optional checks inside cluster:
 ```bash
-KEYCLOAK_POD=$(kubectl -n frigg get pod -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].metadata.name}')
+KEYCLOAK_POD=$(kubectl -n identity get pod -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].metadata.name}')
 
-kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
 	/opt/bitnami/keycloak/bin/kcadm.sh config credentials \
-	--server http://127.0.0.1:8080 --realm master --user admin --password admin-password
+	--server http://127.0.0.1:8080 --realm master --user admin --password "$(kubectl -n identity get secret keycloak -o jsonpath='{.data.admin-password}' | base64 -d)"
 
-kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
 	/opt/bitnami/keycloak/bin/kcadm.sh get realms/frigg-data-platform
 
-kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
 	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=michael.homme@fb.no
 
-kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
 	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=alexander.field.fb.no
 
-kubectl -n frigg exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
+kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
 	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=olav.syse@fb.no
 ```
 
@@ -185,7 +297,7 @@ export TRINO_CLIENT_SECRET=$(kubectl -n frigg-pot-platform get secret trino-oidc
 Set a realm user and get an access token:
 ```bash
 export KC_USER="michael.homme@fb.no"
-export KC_PASS="michaelhomme123!"
+export KC_PASS="ChangeMe.Admin.123!"
 
 export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/frigg-data-platform/protocol/openid-connect/token" \
 	-H "Content-Type: application/x-www-form-urlencoded" \

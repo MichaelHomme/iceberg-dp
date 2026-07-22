@@ -8,4 +8,4 @@ spec:
     kinds:
       - apiGroups: ["apps"]
         kinds: ["Deployment"]
-    namespaces: ["data-platform"]
+    namespaces: ["frigg-pot-platform"]
