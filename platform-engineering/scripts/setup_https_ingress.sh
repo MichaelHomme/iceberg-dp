@@ -107,6 +107,6 @@ TRINO_INGRESS_TLS_SECRET_NAME=trino-tls
 TRINO_INGRESS_CERT_MANAGER_CLUSTER_ISSUER=${CERT_MANAGER_CLUSTER_ISSUER_NAME}
 
 Then run:
-  ./platform-engineering/scripts/setup_keycloak_phase1.sh
+  # Configure Keycloak realm/client/users in the Keycloak UI
   ./platform-engineering/scripts/deploy_platform.sh
 EONEXT

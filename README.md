@@ -39,15 +39,18 @@ This repository is split into 3 ownership/workflow areas:
 - Scripted execution and validation for data pipelines.
 
 ## Current Status
-Initial repository customization has been implemented:
+Platform baseline has been implemented across infrastructure, platform-engineering, and data-engineering areas:
 - Copilot repository guidance: `.github/copilot-instructions.md`
 - Skills:
   - `.github/skills/infrastructure/SKILL.md`
   - `.github/skills/platform-engineering/SKILL.md`
   - `.github/skills/data-engineering/SKILL.md`
 - Git ignore baseline: `.gitignore`
-
-Scaffolding for infra/platform/data folders will be added next.
+- Terraform assets for Azure resources in `infrastructure/terraform`.
+- Helm-based platform deployment in `platform-engineering/helm/apache-platform`.
+- OPA/Gatekeeper policy assets in `platform-engineering/opa/gatekeeper`.
+- Trino + Polaris + Keycloak OIDC wiring through `platform-engineering/scripts/deploy_platform.sh`.
+- Airflow + dbt scaffolding in `data-engineering`.
 
 ## Repository Conventions
 - Scripts-first: all actions should be runnable through bash scripts.
@@ -78,8 +81,7 @@ Scaffolding for infra/platform/data folders will be added next.
 - Jupyter: https://docs.jupyter.org/en/latest/
 
 ## Next Steps
-1. Add base folder scaffolding for `infrastructure`, `platform-engineering`, and `data-engineering`.
-2. Add root and per-area `.env.example` templates.
-3. Add Azure bootstrap scripts for resource group and Terraform state storage.
-4. Add Terraform baseline files and variables/outputs.
-5. Add initial Helm/Kubernetes, OPA, Airflow, and dbt scaffolding.
+1. Keep identity and auth settings in sync by running scripted deployments from `platform-engineering/scripts/deploy_platform.sh`.
+2. Run platform validation after each deploy: `./platform-engineering/scripts/validate_platform.sh`.
+3. Execute the full auth and data access runbook in `platform-engineering/README.md` (Testing section) for regression checks.
+4. Replace temporary OIDC TLS workaround (`POLARIS_OIDC_TLS_VERIFICATION=none`) with trusted certificate chain configuration.

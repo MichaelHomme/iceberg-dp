@@ -36,7 +36,7 @@ cp platform-engineering/.env.platform.example platform-engineering/.env.platform
 - Trino file-based access control is configured in `helm/apache-platform/values.yaml` (`access-control.properties` + `rules.json`).
 - User policies currently enforced in Trino:
 	- `michael.homme@fb.no` (admin): full access to all catalogs/schemas/tables.
-	- `alexander.field.fb.no` (data engineer): read/write access to `bronze`, `silver`, and `gold` schemas.
+	- `alexander.field@fb.no` (data engineer): read/write access to `bronze`, `silver`, and `gold` schemas.
 	- `olav.syse@fb.no` (data analyst): read-only access to `gold` schema.
 - Medallion schemas expected by policy: `bronze`, `silver`, `gold`.
 
@@ -82,26 +82,52 @@ Terminology used below:
 - Keycloak namespace: `identity` by default for the in-cluster Keycloak Helm release.
 - Keycloak realm: `frigg-data-platform` for OIDC users, clients, and tokens.
 
-You can use either the bootstrap script or the Keycloak UI.
+Use the Keycloak UI for realm/client/user management. The deploy script derives `TRINO_OIDC_ISSUER` from Keycloak settings when not set, creates/updates the Trino OIDC secret from `KEYCLOAK_CLIENT_SECRET` when needed, and auto-creates Trino internal communication secret if missing.
 
-#### Option A: Bootstrap script
-1. Configure `platform-engineering/.env.platform` with Keycloak and user bootstrap values.
-2. Run the Keycloak bootstrap script:
-	- `./platform-engineering/scripts/setup_keycloak_phase1.sh`
-3. Enable OIDC in Helm values (environment-specific override file):
-	- `trino.oidc.enabled: true`
-	- `trino.oidc.issuer: "http://keycloak.identity.svc.cluster.local/realms/frigg-data-platform"`
-	- `trino.oidc.clientId: "trino"`
-	- `trino.oidc.createSecret: false`
-	- `trino.oidc.secretName: "trino-oidc-secret"`
-	- `trino.oidc.secretKey: "client-secret"`
-	- `trino.internalCommunication.createSecret: false`
-	- `trino.internalCommunication.secretName: "trino-internal-communication-secret"`
-	- `trino.internalCommunication.secretKey: "shared-secret"`
-4. Redeploy the chart:
-	- `helm upgrade --install apache-platform platform-engineering/helm/apache-platform --namespace <platform-namespace> --create-namespace -f <your-override-values>.yaml`
+1. Configure `platform-engineering/.env.platform` with OIDC values (minimal):
+	- `TRINO_OIDC_ENABLED=true`
+	- `TRINO_OIDC_CLIENT_ID=trino`
+	- `KEYCLOAK_CLIENT_SECRET=<your-keycloak-client-secret>`
+2. Configure Keycloak in the UI as described in Option B below.
+3. Redeploy via script:
+	- `./platform-engineering/scripts/deploy_platform.sh`
 
-#### Option A2: Helm-managed Kubernetes secret
+Notes:
+- If `TRINO_OIDC_ISSUER` is empty, deploy derives it from `KEYCLOAK_*` values.
+- If `TRINO_OIDC_ALLOW_INSECURE_OVER_HTTP=false` and TLS ingress is not enabled, deploy flips it to `true` for that run so browser login works in HTTP dev mode.
+
+## Polaris OIDC (Keycloak-Compatible)
+To allow Polaris to accept bearer tokens issued by Keycloak, enable Polaris OIDC in `platform-engineering/.env.platform`:
+
+```bash
+POLARIS_OIDC_ENABLED=true
+POLARIS_AUTHENTICATION_TYPE=mixed
+POLARIS_OIDC_AUTH_SERVER_URL=http://keycloak.identity.svc.cluster.local/realms/<realm>
+POLARIS_OIDC_CLIENT_ID=trino
+POLARIS_OIDC_TLS_VERIFICATION=
+POLARIS_OIDC_PRINCIPAL_ID_CLAIM_PATH=
+POLARIS_OIDC_PRINCIPAL_NAME_CLAIM_PATH=email
+POLARIS_OIDC_ROLE_CLAIM_PATH=realm_access/roles
+POLARIS_OIDC_ROLE_FILTER='^POLARIS_.*$'
+POLARIS_OIDC_ROLE_MAPPING_REGEX='^POLARIS_(.*)$'
+POLARIS_OIDC_ROLE_MAPPING_REPLACEMENT='PRINCIPAL_ROLE:$1'
+```
+
+Then redeploy:
+
+```bash
+./platform-engineering/scripts/deploy_platform.sh
+```
+
+Notes:
+- If `POLARIS_OIDC_AUTH_SERVER_URL` is empty, deploy derives it from `KEYCLOAK_*` values.
+- `mixed` authentication keeps internal auth available while also accepting Keycloak OIDC tokens.
+- `POLARIS_OIDC_TLS_VERIFICATION` is optional; keep it empty for normal TLS verification, and use `none` only if your Keycloak HTTPS certificate chain is not trusted by Polaris.
+- For bearer-token tests, use the full URL and include `Authorization: Bearer <token>`.
+- Proper model (least privilege): create Keycloak realm roles with prefix `POLARIS_` (example: `POLARIS_CATALOG_MANAGE`) and assign those roles to users/groups. The mapping above converts only those roles into Polaris principal roles.
+- Avoid root impersonation mappers in Keycloak (`principal_id=1` or `principal_name=polaris-root`) in normal operation.
+
+#### Option A: Helm-managed Kubernetes secret
 If you want Helm to create the Kubernetes secret for Trino, enable the secret template and pass the client secret at deploy time from an untracked override file or `--set-string`:
 
 ```yaml
@@ -157,9 +183,9 @@ TRINO_INTERNAL_COMMUNICATION_SECRET_KEY=shared-secret
 	- Standard flow: enabled
 	- Direct access grants: enabled
 4. Copy the client secret from the Keycloak UI.
-5. Create or reuse users with usernames matching the Trino access rules:
+5. Create or reuse users and set their email addresses to match Trino access rules:
 	- `michael.homme@fb.no`
-	- `alexander.field.fb.no`
+	- `alexander.field@fb.no`
 	- `olav.syse@fb.no`
 6. Create the Kubernetes secret consumed by Trino in the platform namespace:
 	- `kubectl -n frigg-pot-platform create secret generic trino-oidc-secret --from-literal=client-secret='<your-client-secret>' --dry-run=client -o yaml | kubectl apply -f -`
@@ -173,7 +199,6 @@ Notes:
 - Trino requires `internal-communication.shared-secret` whenever authentication is enabled. This chart wires it from Kubernetes secret `trino-internal-communication-secret`.
 - If `trino.internalCommunication.createSecret=true`, Helm will create `trino-internal-communication-secret` from `trino.internalCommunication.sharedSecret`.
 - `TRINO_WEB_UI_AUTHENTICATION_TYPE=insecure` is useful for local HTTP port-forward development; for production behind TLS, prefer `oauth2`.
-- The bootstrap script defaults to `bitnamilegacy` repositories on Docker Hub for Keycloak/PostgreSQL images, with chart-default tags (latest chart-compatible). Set `KEYCLOAK_IMAGE_*` and `KEYCLOAK_POSTGRESQL_IMAGE_*` only when you need to pin or override.
 
 ### Step-by-step: set up the Trino client in Keycloak
 1. Port-forward the Keycloak service:
@@ -188,7 +213,7 @@ Notes:
 9. Save the client, open the Credentials tab, and copy the client secret.
 10. Create the three users if they do not already exist:
 	- `michael.homme@fb.no`
-	- `alexander.field.fb.no`
+	- `alexander.field@fb.no`
 	- `olav.syse@fb.no`
 11. Set a password for each user and disable temporary password mode.
 12. Choose how Trino gets the client secret:
@@ -210,8 +235,21 @@ Notes:
 - Integrate Kubernetes secrets with Azure Key Vault/CSI instead of long-lived literals in env files.
 - Add monitoring and alerting for auth failures, token issuance failures, and admin events.
 
-## Testing - TRINO, POLARIS and KEYCLOACK
+## Testing - Trino, Polaris, and Keycloak
 Use this runbook after deployment to verify Keycloak, Polaris, Trino, and medallion access behavior.
+
+### 0. OIDC preflight (recommended before token tests)
+Confirm Polaris is configured with the in-cluster Keycloak endpoint and optional TLS mode expected for your environment:
+
+```bash
+kubectl -n frigg-pot-platform get configmap polaris-config -o jsonpath='{.data.QUARKUS_OIDC_AUTH_SERVER_URL}{"\n"}'
+kubectl -n frigg-pot-platform get configmap polaris-config -o jsonpath='{.data.QUARKUS_OIDC_TLS_VERIFICATION}{"\n"}'
+```
+
+Expected:
+- `QUARKUS_OIDC_AUTH_SERVER_URL` should resolve to a reachable realm URL.
+- For this cluster, working in-cluster value is `http://keycloak.identity.svc.cluster.local/realms/frigg-data-platform`.
+- `QUARKUS_OIDC_TLS_VERIFICATION` can be empty (default verification) or `none` if cert trust is not configured yet.
 
 ### 1. Check pods are running
 ```bash
@@ -241,17 +279,12 @@ curl -s -o /dev/null -w 'polaris_http_code=%{http_code}\n' http://localhost:8181
 curl -fsS http://localhost:8080/v1/info | jq '{version: .nodeVersion.version, state: .state}'
 ```
 
-### 3. Ensure Keycloak realm/client/users exist (idempotent)
-If you are using the bootstrap script and need to reconcile Keycloak objects, rerun:
-```bash
-./platform-engineering/scripts/setup_keycloak_phase1.sh
-```
-
-If you are managing Keycloak manually in the UI, verify instead that:
+### 3. Ensure Keycloak realm/client/users exist
+If you are managing Keycloak manually in the UI, verify that:
 - The realm `frigg-data-platform` exists.
 - The client `trino` exists and has a client secret.
 - The Kubernetes secret `trino-oidc-secret` exists in `frigg-pot-platform`.
-- The test users exist with the expected usernames.
+- The test users exist with the expected emails.
 
 Retrieve current Keycloak/Trino credentials from Kubernetes secrets:
 ```bash
@@ -277,17 +310,42 @@ kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcad
 	/opt/bitnami/keycloak/bin/kcadm.sh get realms/frigg-data-platform
 
 kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
-	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=michael.homme@fb.no
+	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q email=michael.homme@fb.no
 
 kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
-	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=alexander.field.fb.no
+	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q email=alexander.field@fb.no
 
 kubectl -n identity exec "$KEYCLOAK_POD" -- env HOME=/tmp KCADM_CONFIG=/tmp/kcadm.config \
-	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q username=olav.syse@fb.no
+	/opt/bitnami/keycloak/bin/kcadm.sh get users -r frigg-data-platform -q email=olav.syse@fb.no
 ```
 
 ### 3b. Validate Polaris auth with a Keycloak bearer token
 Keep Keycloak and Polaris port-forwards active, then request a token and call Polaris.
+
+Before testing, ensure the user has at least one Keycloak role matching `POLARIS_*` and that the corresponding Polaris principal role exists.
+
+If the Polaris principal does not exist or was lost after a restart, bootstrap it with Polaris root credentials:
+
+```bash
+ROOT_BASIC=$(printf '%s' 'polaris-root:change-me-polaris-root-secret' | base64)
+
+ROOT_TOKEN=$(curl -sS -X POST http://localhost:8181/api/catalog/v1/oauth/tokens \
+	-H "Authorization: Basic ${ROOT_BASIC}" \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data 'grant_type=client_credentials&scope=PRINCIPAL_ROLE:ALL' | jq -r '.access_token')
+
+curl -i -X POST http://localhost:8181/api/management/v1/principals \
+	-H "Authorization: Bearer ${ROOT_TOKEN}" \
+	-H 'Polaris-Realm: POLARIS' \
+	-H 'Content-Type: application/json' \
+	--data '{"name":"michael.homme@fb.no"}'
+
+curl -i -X PUT http://localhost:8181/api/management/v1/principals/michael.homme@fb.no/principal-roles \
+	-H "Authorization: Bearer ${ROOT_TOKEN}" \
+	-H 'Polaris-Realm: POLARIS' \
+	-H 'Content-Type: application/json' \
+	--data '{"name":"service_admin"}'
+```
 
 Get the OIDC client secret from Kubernetes:
 ```bash
@@ -296,8 +354,8 @@ export TRINO_CLIENT_SECRET=$(kubectl -n frigg-pot-platform get secret trino-oidc
 
 Set a realm user and get an access token:
 ```bash
-export KC_USER="michael.homme@fb.no"
-export KC_PASS="ChangeMe.Admin.123!"
+export KC_USER="michaelhomme"
+export KC_PASS="<password-configured-for-that-user-in-keycloak>"
 
 export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/frigg-data-platform/protocol/openid-connect/token" \
 	-H "Content-Type: application/x-www-form-urlencoded" \
@@ -310,10 +368,22 @@ export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/frigg-data-platform
 echo "${TOKEN}" | cut -c1-30
 ```
 
-Call Polaris with the bearer token (unauthenticated call should return 401, authenticated call should pass auth):
+Call Polaris with the bearer token (unauthenticated call should return 401, authenticated calls should not return 401):
 ```bash
 curl -i http://localhost:8181/api/catalog/v1/config
 curl -i -H "Authorization: Bearer ${TOKEN}" http://localhost:8181/api/catalog/v1/config
+curl -i -H "Authorization: Bearer ${TOKEN}" -H 'Polaris-Realm: POLARIS' -H 'Accept: application/json' http://localhost:8181/api/management/v1/catalogs
+```
+
+Expected:
+- First call: `401 Unauthorized`.
+- Authenticated `GET /api/catalog/v1/config`: expected auth success; may return `400 Bad Request` with `Please specify a warehouse` if warehouse is omitted.
+- Authenticated `GET /api/management/v1/catalogs`: `200 OK` (for example `{"catalogs":[]}`).
+
+If authenticated calls still return `401`, check Polaris logs immediately after a request:
+
+```bash
+kubectl -n frigg-pot-platform logs deploy/polaris --tail=200 | rg -i 'oidc|jwt|signature|principal|401|exception'
 ```
 
 ### 4. Create catalog and medallion schemas in Trino
@@ -371,7 +441,7 @@ curl -sS -X POST http://localhost:8080/v1/statement \
 Engineer (should access bronze/silver/gold):
 ```bash
 curl -sS -X POST http://localhost:8080/v1/statement \
-	-H 'X-Trino-User: alexander.field.fb.no' \
+	-H 'X-Trino-User: alexander.field@fb.no' \
 	--data-binary "SELECT * FROM ${CATALOG}.silver.orders_clean LIMIT 10"
 ```
 
