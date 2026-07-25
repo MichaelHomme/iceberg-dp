@@ -13,9 +13,6 @@ fi
 PLATFORM_NAMESPACE="${PLATFORM_NAMESPACE:-frigg-pot-platform}"
 HELM_RELEASE_NAME="${HELM_RELEASE_NAME:-apache-platform}"
 HELM_CHART_PATH="${HELM_CHART_PATH:-platform-engineering/helm/apache-platform}"
-ENABLE_GATEKEEPER="${ENABLE_GATEKEEPER:-false}"
-GATEKEEPER_RELEASE_NAME="${GATEKEEPER_RELEASE_NAME:-gatekeeper}"
-GATEKEEPER_NAMESPACE="${GATEKEEPER_NAMESPACE:-gatekeeper-system}"
 POLARIS_AZURE_ENABLED="${POLARIS_AZURE_ENABLED:-false}"
 POLARIS_AZURE_CREDENTIALS_SECRET_NAME="${POLARIS_AZURE_CREDENTIALS_SECRET_NAME:-polaris-azure-credentials}"
 POLARIS_AZURE_TENANT_ID="${POLARIS_AZURE_TENANT_ID:-}"
@@ -56,11 +53,9 @@ TRINO_INGRESS_HOST="${TRINO_INGRESS_HOST:-}"
 TRINO_INGRESS_TLS_ENABLED="${TRINO_INGRESS_TLS_ENABLED:-false}"
 TRINO_INGRESS_TLS_SECRET_NAME="${TRINO_INGRESS_TLS_SECRET_NAME:-}"
 TRINO_INGRESS_CERT_MANAGER_CLUSTER_ISSUER="${TRINO_INGRESS_CERT_MANAGER_CLUSTER_ISSUER:-}"
-KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-identity}"
+KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-frigg-pot-platform}"
 KEYCLOAK_RELEASE_NAME="${KEYCLOAK_RELEASE_NAME:-keycloak}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-frigg-data-platform}"
-KEYCLOAK_INGRESS_ENABLED="${KEYCLOAK_INGRESS_ENABLED:-false}"
-KEYCLOAK_INGRESS_HOST="${KEYCLOAK_INGRESS_HOST:-}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-${TRINO_OIDC_CLIENT_ID:-trino}}"
 KEYCLOAK_CLIENT_SECRET="${KEYCLOAK_CLIENT_SECRET:-${TRINO_OIDC_CLIENT_SECRET:-}}"
 AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP:-}"
@@ -127,35 +122,6 @@ fi
 echo "Creating namespaces"
 kubectl get namespace "$PLATFORM_NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$PLATFORM_NAMESPACE"
 
-if [[ "$ENABLE_GATEKEEPER" == "true" ]]; then
-  kubectl get namespace "$GATEKEEPER_NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$GATEKEEPER_NAMESPACE"
-
-  echo "Installing Gatekeeper"
-  helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts >/dev/null 2>&1 || true
-  helm repo update >/dev/null
-  helm upgrade --install "$GATEKEEPER_RELEASE_NAME" gatekeeper/gatekeeper \
-    --namespace "$GATEKEEPER_NAMESPACE"
-
-  echo "Waiting for Gatekeeper controller"
-  kubectl -n "$GATEKEEPER_NAMESPACE" rollout status deployment/gatekeeper-controller-manager --timeout=180s
-
-  echo "Applying Gatekeeper templates and constraints"
-  kubectl apply -f "$REPO_ROOT/platform-engineering/opa/gatekeeper/constrainttemplates"
-
-  # Render constraints for the selected platform namespace at deploy time.
-  CONSTRAINTS_SRC_DIR="$REPO_ROOT/platform-engineering/opa/gatekeeper/constraints"
-  CONSTRAINTS_RENDER_DIR="$(mktemp -d)"
-  trap 'rm -rf "$CONSTRAINTS_RENDER_DIR"' EXIT
-
-  for constraint_file in "$CONSTRAINTS_SRC_DIR"/*.yaml; do
-    sed "s/namespaces: \[\"frigg-pot-platform\"\]/namespaces: [\"${PLATFORM_NAMESPACE}\"]/g" "$constraint_file" > "$CONSTRAINTS_RENDER_DIR/$(basename "$constraint_file")"
-  done
-
-  kubectl apply -f "$CONSTRAINTS_RENDER_DIR"
-else
-  echo "Skipping Gatekeeper install and OPA constraints (ENABLE_GATEKEEPER=${ENABLE_GATEKEEPER})"
-fi
-
 if [[ "$POLARIS_AZURE_ENABLED" == "true" ]]; then
   if [[ -z "$POLARIS_AZURE_TENANT_ID" || -z "$POLARIS_AZURE_CLIENT_ID" || -z "$POLARIS_AZURE_CLIENT_SECRET" ]]; then
     echo "POLARIS_AZURE_ENABLED=true requires POLARIS_AZURE_TENANT_ID, POLARIS_AZURE_CLIENT_ID, and POLARIS_AZURE_CLIENT_SECRET"
@@ -172,11 +138,7 @@ fi
 
 if [[ "$POLARIS_OIDC_ENABLED" == "true" ]]; then
   if [[ -z "$POLARIS_OIDC_AUTH_SERVER_URL" ]]; then
-    if [[ "$KEYCLOAK_INGRESS_ENABLED" == "true" && -n "$KEYCLOAK_INGRESS_HOST" ]]; then
-      POLARIS_OIDC_AUTH_SERVER_URL="https://${KEYCLOAK_INGRESS_HOST}/realms/${KEYCLOAK_REALM}"
-    else
-      POLARIS_OIDC_AUTH_SERVER_URL="http://${KEYCLOAK_RELEASE_NAME}.${KEYCLOAK_NAMESPACE}.svc.cluster.local/realms/${KEYCLOAK_REALM}"
-    fi
+    POLARIS_OIDC_AUTH_SERVER_URL="http://${KEYCLOAK_RELEASE_NAME}.${KEYCLOAK_NAMESPACE}.svc.cluster.local/realms/${KEYCLOAK_REALM}"
     echo "POLARIS_OIDC_AUTH_SERVER_URL not set; derived from Keycloak settings: $POLARIS_OIDC_AUTH_SERVER_URL"
   fi
 
@@ -193,11 +155,7 @@ fi
 
 if [[ "$TRINO_OIDC_ENABLED" == "true" ]]; then
   if [[ -z "$TRINO_OIDC_ISSUER" ]]; then
-    if [[ "$KEYCLOAK_INGRESS_ENABLED" == "true" && -n "$KEYCLOAK_INGRESS_HOST" ]]; then
-      TRINO_OIDC_ISSUER="https://${KEYCLOAK_INGRESS_HOST}/realms/${KEYCLOAK_REALM}"
-    else
-      TRINO_OIDC_ISSUER="http://${KEYCLOAK_RELEASE_NAME}.${KEYCLOAK_NAMESPACE}.svc.cluster.local/realms/${KEYCLOAK_REALM}"
-    fi
+    TRINO_OIDC_ISSUER="http://${KEYCLOAK_RELEASE_NAME}.${KEYCLOAK_NAMESPACE}.svc.cluster.local/realms/${KEYCLOAK_REALM}"
     echo "TRINO_OIDC_ISSUER not set; derived from Keycloak settings: $TRINO_OIDC_ISSUER"
   fi
 

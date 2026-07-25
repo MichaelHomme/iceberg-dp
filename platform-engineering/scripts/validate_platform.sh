@@ -24,8 +24,4 @@ trap 'rm -f "$render_file"' EXIT
 helm template apache-platform "$CHART_PATH" >"$render_file"
 kubectl apply --dry-run=client -f "$render_file" >/dev/null
 
-echo "Checking OPA files"
-kubectl apply --dry-run=client -f "$REPO_ROOT/platform-engineering/opa/gatekeeper/constrainttemplates" >/dev/null
-kubectl apply --dry-run=client -f "$REPO_ROOT/platform-engineering/opa/gatekeeper/constraints" >/dev/null
-
 echo "Validation complete"

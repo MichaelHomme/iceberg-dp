@@ -11,7 +11,6 @@ Define and operate Kubernetes platform components on AKS using reproducible scri
 ## Use This Skill For
 - Helm release definitions and values management.
 - Kubernetes resources for namespaces, workloads, services, and RBAC.
-- OPA policy setup and policy validation workflows.
 - Keycloak-based identity and role mapping for test personas.
 - Wiring platform components together (Polaris, Trino, Superset, Jupyter).
 
@@ -35,7 +34,6 @@ Define and operate Kubernetes platform components on AKS using reproducible scri
 - Apache Iceberg docs: https://iceberg.apache.org/docs/latest/
 - Trino docs: https://trino.io/docs/current/
 - Apache Superset docs: https://superset.apache.org/docs/intro
-- OPA docs: https://www.openpolicyagent.org/docs/latest/
 - Keycloak docs: https://www.keycloak.org/documentation
 - Kubernetes docs: https://kubernetes.io/docs/home/
 - Helm docs: https://helm.sh/docs/
