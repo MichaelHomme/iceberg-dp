@@ -20,7 +20,8 @@ with DAG(
     catchup=False,
     tags=["iceberg", "dbt", "kubernetes"],
 ) as dag:
-    kpo_namespace = os.getenv("AIRFLOW_KPO_NAMESPACE", "data-platform")
+    kpo_namespace = os.getenv("AIRFLOW_KPO_NAMESPACE", "frigg-pot-platform")
+    kpo_service_account_name = os.getenv("AIRFLOW_KPO_SERVICE_ACCOUNT_NAME", "airflow-sa")
     dbt_image = os.getenv("DBT_IMAGE", "ghcr.io/dbt-labs/dbt-core:1.8.latest")
 
     dbt_parse = KubernetesPodOperator(
@@ -36,6 +37,8 @@ with DAG(
         get_logs=True,
         is_delete_operator_pod=True,
         in_cluster=True,
+        service_account_name=kpo_service_account_name,
+        labels={"azure.workload.identity/use": "true"},
     )
 
     dbt_run = KubernetesPodOperator(
@@ -51,6 +54,8 @@ with DAG(
         get_logs=True,
         is_delete_operator_pod=True,
         in_cluster=True,
+        service_account_name=kpo_service_account_name,
+        labels={"azure.workload.identity/use": "true"},
     )
 
     dbt_parse >> dbt_run

@@ -56,6 +56,33 @@ TRINO_INGRESS_CERT_MANAGER_CLUSTER_ISSUER="${TRINO_INGRESS_CERT_MANAGER_CLUSTER_
 KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-frigg-pot-platform}"
 KEYCLOAK_RELEASE_NAME="${KEYCLOAK_RELEASE_NAME:-keycloak}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-frigg-data-platform}"
+KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
+KEYCLOAK_IMAGE_REGISTRY="${KEYCLOAK_IMAGE_REGISTRY:-docker.io}"
+KEYCLOAK_IMAGE_REPOSITORY="${KEYCLOAK_IMAGE_REPOSITORY:-bitnamilegacy/keycloak}"
+KEYCLOAK_IMAGE_TAG="${KEYCLOAK_IMAGE_TAG:-}"
+KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY="${KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY:-}"
+KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY="${KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY:-}"
+KEYCLOAK_POSTGRESQL_IMAGE_TAG="${KEYCLOAK_POSTGRESQL_IMAGE_TAG:-}"
+KEYCLOAK_HELM_TIMEOUT="${KEYCLOAK_HELM_TIMEOUT:-20m}"
+KEYCLOAK_ENABLED="${KEYCLOAK_ENABLED:-true}"
+KEYCLOAK_HELM_REPO_NAME="${KEYCLOAK_HELM_REPO_NAME:-bitnami}"
+KEYCLOAK_HELM_REPO_URL="${KEYCLOAK_HELM_REPO_URL:-https://charts.bitnami.com/bitnami}"
+KEYCLOAK_HELM_CHART_VERSION="${KEYCLOAK_HELM_CHART_VERSION:-25.2.0}"
+KEYCLOAK_AUTH_SECRET_NAME="${KEYCLOAK_AUTH_SECRET_NAME:-keycloak}"
+KEYCLOAK_ADMIN_PASSWORD_SECRET_KEY="${KEYCLOAK_ADMIN_PASSWORD_SECRET_KEY:-admin-password}"
+KEYCLOAK_POSTGRESQL_ENABLED="${KEYCLOAK_POSTGRESQL_ENABLED:-}"
+KEYCLOAK_POSTGRESQL_EXISTING_SECRET="${KEYCLOAK_POSTGRESQL_EXISTING_SECRET:-}"
+KEYCLOAK_POSTGRESQL_SECRET_USER_KEY="${KEYCLOAK_POSTGRESQL_SECRET_USER_KEY:-password}"
+KEYCLOAK_POSTGRESQL_SECRET_ADMIN_KEY="${KEYCLOAK_POSTGRESQL_SECRET_ADMIN_KEY:-postgres-password}"
+KEYCLOAK_EXTERNAL_DATABASE_HOST="${KEYCLOAK_EXTERNAL_DATABASE_HOST:-}"
+KEYCLOAK_EXTERNAL_DATABASE_PORT="${KEYCLOAK_EXTERNAL_DATABASE_PORT:-5432}"
+KEYCLOAK_EXTERNAL_DATABASE_USER="${KEYCLOAK_EXTERNAL_DATABASE_USER:-bn_keycloak}"
+KEYCLOAK_EXTERNAL_DATABASE_DATABASE="${KEYCLOAK_EXTERNAL_DATABASE_DATABASE:-bitnami_keycloak}"
+KEYCLOAK_EXTERNAL_DATABASE_PASSWORD="${KEYCLOAK_EXTERNAL_DATABASE_PASSWORD:-}"
+KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET="${KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET:-}"
+KEYCLOAK_EXTERNAL_DATABASE_SECRET_USER_KEY="${KEYCLOAK_EXTERNAL_DATABASE_SECRET_USER_KEY:-db-user}"
+KEYCLOAK_EXTERNAL_DATABASE_SECRET_PASSWORD_KEY="${KEYCLOAK_EXTERNAL_DATABASE_SECRET_PASSWORD_KEY:-db-password}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-${TRINO_OIDC_CLIENT_ID:-trino}}"
 KEYCLOAK_CLIENT_SECRET="${KEYCLOAK_CLIENT_SECRET:-${TRINO_OIDC_CLIENT_SECRET:-}}"
 AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP:-}"
@@ -64,6 +91,17 @@ AKS_NAME="${AKS_NAME:-}"
 TRINO_OIDC_SCOPES_HELM="${TRINO_OIDC_SCOPES//,/\\,}"
 
 create_or_update_secret_literal() {
+  local namespace="$1"
+  local name="$2"
+  local key="$3"
+  local value="$4"
+
+  kubectl -n "$namespace" create secret generic "$name" \
+    --from-literal="${key}=${value}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+}
+
+upsert_secret_literal_in_namespace() {
   local namespace="$1"
   local name="$2"
   local key="$3"
@@ -90,6 +128,40 @@ fi
 if ! command -v helm >/dev/null 2>&1; then
   echo "helm is required"
   exit 1
+fi
+
+if ! kubectl -n "$KEYCLOAK_NAMESPACE" get svc "$KEYCLOAK_RELEASE_NAME" >/dev/null 2>&1; then
+  detected_keycloak_namespace="$(kubectl get svc -A --no-headers 2>/dev/null | awk -v svc="$KEYCLOAK_RELEASE_NAME" '$2==svc {print $1; exit}')"
+  if [[ -n "$detected_keycloak_namespace" ]]; then
+    echo "KEYCLOAK_NAMESPACE '$KEYCLOAK_NAMESPACE' does not contain service '$KEYCLOAK_RELEASE_NAME'; using detected namespace '$detected_keycloak_namespace'"
+    KEYCLOAK_NAMESPACE="$detected_keycloak_namespace"
+  fi
+fi
+
+rewrite_keycloak_oidc_url_namespace() {
+  local current_url="$1"
+  if [[ "$current_url" =~ ^https?://${KEYCLOAK_RELEASE_NAME}\.([a-z0-9-]+)\.svc\.cluster\.local/realms/ ]]; then
+    local url_namespace="${BASH_REMATCH[1]}"
+    if [[ "$url_namespace" != "$KEYCLOAK_NAMESPACE" ]]; then
+      local corrected_url
+      corrected_url="$(printf '%s' "$current_url" | sed -E "s#(https?://${KEYCLOAK_RELEASE_NAME})\.[a-z0-9-]+(\.svc\.cluster\.local/realms/)#\\1.${KEYCLOAK_NAMESPACE}\\2#")"
+      printf '%s' "$corrected_url"
+      return
+    fi
+  fi
+  printf '%s' "$current_url"
+}
+
+rewritten_trino_oidc_issuer="$(rewrite_keycloak_oidc_url_namespace "$TRINO_OIDC_ISSUER")"
+if [[ "$rewritten_trino_oidc_issuer" != "$TRINO_OIDC_ISSUER" ]]; then
+  echo "Rewriting TRINO_OIDC_ISSUER to namespace '$KEYCLOAK_NAMESPACE'"
+  TRINO_OIDC_ISSUER="$rewritten_trino_oidc_issuer"
+fi
+
+rewritten_polaris_oidc_url="$(rewrite_keycloak_oidc_url_namespace "$POLARIS_OIDC_AUTH_SERVER_URL")"
+if [[ "$rewritten_polaris_oidc_url" != "$POLARIS_OIDC_AUTH_SERVER_URL" ]]; then
+  echo "Rewriting POLARIS_OIDC_AUTH_SERVER_URL to namespace '$KEYCLOAK_NAMESPACE'"
+  POLARIS_OIDC_AUTH_SERVER_URL="$rewritten_polaris_oidc_url"
 fi
 
 if [[ -n "$AKS_RESOURCE_GROUP" || -n "$AKS_NAME" ]]; then
@@ -121,6 +193,105 @@ fi
 
 echo "Creating namespaces"
 kubectl get namespace "$PLATFORM_NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$PLATFORM_NAMESPACE"
+
+if [[ "$KEYCLOAK_ENABLED" == "true" ]]; then
+  echo "Ensuring Keycloak namespace exists"
+  kubectl get namespace "$KEYCLOAK_NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$KEYCLOAK_NAMESPACE"
+
+  if [[ -n "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
+    echo "Creating/updating Keycloak admin secret: $KEYCLOAK_AUTH_SECRET_NAME"
+    upsert_secret_literal_in_namespace "$KEYCLOAK_NAMESPACE" "$KEYCLOAK_AUTH_SECRET_NAME" "$KEYCLOAK_ADMIN_PASSWORD_SECRET_KEY" "$KEYCLOAK_ADMIN_PASSWORD"
+  fi
+
+  keycloak_release_exists="false"
+  if helm -n "$KEYCLOAK_NAMESPACE" status "$KEYCLOAK_RELEASE_NAME" >/dev/null 2>&1; then
+    keycloak_release_exists="true"
+  fi
+
+  echo "Installing/upgrading Keycloak release"
+  helm repo add "$KEYCLOAK_HELM_REPO_NAME" "$KEYCLOAK_HELM_REPO_URL" >/dev/null 2>&1 || true
+  helm repo update >/dev/null
+
+  KEYCLOAK_HELM_ARGS=(
+    --namespace "$KEYCLOAK_NAMESPACE"
+    --create-namespace
+    --version "$KEYCLOAK_HELM_CHART_VERSION"
+    --set-string auth.adminUser="$KEYCLOAK_ADMIN_USER"
+    --set-string image.registry="$KEYCLOAK_IMAGE_REGISTRY"
+    --set-string image.repository="$KEYCLOAK_IMAGE_REPOSITORY"
+    --wait
+    --timeout "$KEYCLOAK_HELM_TIMEOUT"
+  )
+
+  if [[ "$keycloak_release_exists" == "true" ]]; then
+    KEYCLOAK_HELM_ARGS+=(--reuse-values)
+  fi
+
+  if [[ -n "$KEYCLOAK_IMAGE_TAG" ]]; then
+    KEYCLOAK_HELM_ARGS+=(--set-string image.tag="$KEYCLOAK_IMAGE_TAG")
+  fi
+
+  if [[ -n "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
+    KEYCLOAK_HELM_ARGS+=(--set-string auth.existingSecret="$KEYCLOAK_AUTH_SECRET_NAME")
+    KEYCLOAK_HELM_ARGS+=(--set-string auth.passwordSecretKey="$KEYCLOAK_ADMIN_PASSWORD_SECRET_KEY")
+  fi
+
+  should_set_db_mode="false"
+  if [[ "$keycloak_release_exists" == "false" ]]; then
+    should_set_db_mode="true"
+  fi
+  if [[ -n "$KEYCLOAK_POSTGRESQL_ENABLED" || -n "$KEYCLOAK_EXTERNAL_DATABASE_HOST" || -n "$KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET" ]]; then
+    should_set_db_mode="true"
+  fi
+
+  if [[ "$should_set_db_mode" == "true" ]]; then
+    if [[ "$KEYCLOAK_POSTGRESQL_ENABLED" == "false" || -n "$KEYCLOAK_EXTERNAL_DATABASE_HOST" || -n "$KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET" ]]; then
+      KEYCLOAK_HELM_ARGS+=(--set postgresql.enabled=false)
+
+      if [[ -z "$KEYCLOAK_EXTERNAL_DATABASE_HOST" ]]; then
+        echo "External DB mode requires KEYCLOAK_EXTERNAL_DATABASE_HOST"
+        exit 1
+      fi
+
+      KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.host="$KEYCLOAK_EXTERNAL_DATABASE_HOST")
+      KEYCLOAK_HELM_ARGS+=(--set externalDatabase.port="$KEYCLOAK_EXTERNAL_DATABASE_PORT")
+      KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.user="$KEYCLOAK_EXTERNAL_DATABASE_USER")
+      KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.database="$KEYCLOAK_EXTERNAL_DATABASE_DATABASE")
+
+      if [[ -n "$KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET" ]]; then
+        KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.existingSecret="$KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET")
+        KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.existingSecretUserKey="$KEYCLOAK_EXTERNAL_DATABASE_SECRET_USER_KEY")
+        KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.existingSecretPasswordKey="$KEYCLOAK_EXTERNAL_DATABASE_SECRET_PASSWORD_KEY")
+      else
+        if [[ -z "$KEYCLOAK_EXTERNAL_DATABASE_PASSWORD" ]]; then
+          echo "External DB mode requires KEYCLOAK_EXTERNAL_DATABASE_PASSWORD when KEYCLOAK_EXTERNAL_DATABASE_EXISTING_SECRET is not set"
+          exit 1
+        fi
+        KEYCLOAK_HELM_ARGS+=(--set-string externalDatabase.password="$KEYCLOAK_EXTERNAL_DATABASE_PASSWORD")
+      fi
+    else
+      KEYCLOAK_HELM_ARGS+=(--set postgresql.enabled=true)
+
+      if [[ -n "$KEYCLOAK_POSTGRESQL_EXISTING_SECRET" ]]; then
+        KEYCLOAK_HELM_ARGS+=(--set-string postgresql.auth.existingSecret="$KEYCLOAK_POSTGRESQL_EXISTING_SECRET")
+        KEYCLOAK_HELM_ARGS+=(--set-string postgresql.auth.secretKeys.userPasswordKey="$KEYCLOAK_POSTGRESQL_SECRET_USER_KEY")
+        KEYCLOAK_HELM_ARGS+=(--set-string postgresql.auth.secretKeys.adminPasswordKey="$KEYCLOAK_POSTGRESQL_SECRET_ADMIN_KEY")
+      fi
+
+      if [[ -n "$KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY" ]]; then
+        KEYCLOAK_HELM_ARGS+=(--set-string postgresql.image.registry="$KEYCLOAK_POSTGRESQL_IMAGE_REGISTRY")
+      fi
+      if [[ -n "$KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY" ]]; then
+        KEYCLOAK_HELM_ARGS+=(--set-string postgresql.image.repository="$KEYCLOAK_POSTGRESQL_IMAGE_REPOSITORY")
+      fi
+      if [[ -n "$KEYCLOAK_POSTGRESQL_IMAGE_TAG" ]]; then
+        KEYCLOAK_HELM_ARGS+=(--set-string postgresql.image.tag="$KEYCLOAK_POSTGRESQL_IMAGE_TAG")
+      fi
+    fi
+  fi
+
+  helm upgrade --install "$KEYCLOAK_RELEASE_NAME" "$KEYCLOAK_HELM_REPO_NAME/keycloak" "${KEYCLOAK_HELM_ARGS[@]}"
+fi
 
 if [[ "$POLARIS_AZURE_ENABLED" == "true" ]]; then
   if [[ -z "$POLARIS_AZURE_TENANT_ID" || -z "$POLARIS_AZURE_CLIENT_ID" || -z "$POLARIS_AZURE_CLIENT_SECRET" ]]; then

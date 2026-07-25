@@ -10,7 +10,7 @@ This folder contains Kubernetes and Helm assets to deploy core Apache data platf
 
 ## Layout
 - `helm/apache-platform/`: umbrella Helm chart for platform workloads.
-- `scripts/deploy_platform.sh`: deploys the platform Helm release and manages Keycloak/Trino/Polaris wiring.
+- `scripts/deploy_platform.sh`: deploys Keycloak (optional), deploys the platform Helm release, and manages Keycloak/Trino/Polaris wiring.
 - `scripts/setup_polaris_azure.sh`: creates/updates Polaris Azure credential secret from environment variables.
 - `scripts/validate_platform.sh`: lints and renders Helm templates.
 
@@ -27,6 +27,8 @@ cp platform-engineering/.env.platform.example platform-engineering/.env.platform
 
 ## Deploy Notes
 - Set `AKS_RESOURCE_GROUP` and `AKS_NAME` in `platform-engineering/.env.platform` to refresh kubeconfig automatically before deploy.
+- `deploy_platform.sh` now manages Keycloak through Helm when `KEYCLOAK_ENABLED=true` (default).
+- For Keycloak database mode, use either `KEYCLOAK_POSTGRESQL_ENABLED=true` (in-chart PostgreSQL) or external DB variables (`KEYCLOAK_EXTERNAL_DATABASE_*`).
 
 ## Data Access Policy (Initial)
 - Trino file-based access control is configured in `helm/apache-platform/values.yaml` (`access-control.properties` + `rules.json`).
@@ -91,6 +93,7 @@ Use the Keycloak UI for realm/client/user management. The deploy script derives 
 Notes:
 - If `TRINO_OIDC_ISSUER` is empty, deploy derives it from `KEYCLOAK_*` values.
 - If `TRINO_OIDC_ALLOW_INSECURE_OVER_HTTP=false` and TLS ingress is not enabled, deploy flips it to `true` for that run so browser login works in HTTP dev mode.
+- `KEYCLOAK_NAMESPACE` must point to the namespace that actually hosts the `keycloak` service; a wrong namespace breaks OIDC discovery and can crash Trino at startup.
 
 ## Identity Model
 Use Keycloak for authentication and Polaris for authorization. Keep them as separate systems and map them through stable identifiers and roles.

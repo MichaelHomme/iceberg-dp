@@ -84,6 +84,14 @@ fi
 TRINO_INGRESS_HOST="${TRINO_INGRESS_HOST:-trino.${INGRESS_PUBLIC_IP}.nip.io}"
 KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-frigg-pot-platform}"
 
+if ! kubectl -n "$KEYCLOAK_NAMESPACE" get svc "$KEYCLOAK_RELEASE_NAME" >/dev/null 2>&1; then
+  detected_keycloak_namespace="$(kubectl get svc -A --no-headers 2>/dev/null | awk -v svc="$KEYCLOAK_RELEASE_NAME" '$2==svc {print $1; exit}')"
+  if [[ -n "$detected_keycloak_namespace" ]]; then
+    echo "KEYCLOAK_NAMESPACE '$KEYCLOAK_NAMESPACE' does not contain service '$KEYCLOAK_RELEASE_NAME'; using detected namespace '$detected_keycloak_namespace'"
+    KEYCLOAK_NAMESPACE="$detected_keycloak_namespace"
+  fi
+fi
+
 cat <<EONEXT
 
 HTTPS ingress prerequisites are ready.

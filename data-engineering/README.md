@@ -21,3 +21,5 @@ bash data-engineering/scripts/run_dbt.sh all
 - Keep runtime-specific values in `data-engineering/.env.data-engineering`.
 - Keep secrets out of source control; pass credentials using env vars or secret stores.
 - `scripts/run_dbt.sh` expects dbt Core CLI, not dbt Cloud CLI.
+- Set `AIRFLOW_KPO_NAMESPACE` to the workload identity namespace used by infrastructure (`frigg-pot-platform` by default).
+- Set `AIRFLOW_KPO_SERVICE_ACCOUNT_NAME` to a service account annotated for Azure workload identity (`airflow-sa` by default).

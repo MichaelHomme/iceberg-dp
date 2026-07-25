@@ -129,6 +129,8 @@ spec:
           ports:
             - containerPort: {{ .Values.superset.service.port }}
           env:
+            - name: SUPERSET_PORT
+              value: {{ .Values.superset.service.port | quote }}
             - name: SUPERSET_ENV
               valueFrom:
                 configMapKeyRef:
