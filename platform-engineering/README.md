@@ -136,6 +136,124 @@ Notes:
 - Proper model (least privilege): create Keycloak realm roles with prefix `POLARIS_` (example: `POLARIS_CATALOG_MANAGE`) and assign those roles to users/groups. The mapping above converts only those roles into Polaris principal roles.
 - Avoid root impersonation mappers in Keycloak (`principal_id=1` or `principal_name=polaris-root`) in normal operation.
 
+### Troubleshooting: 401/403 From Polaris With a Valid Keycloak Token
+These are the real issues hit while wiring Keycloak OIDC into Polaris, and how each was fixed. Work through them in order if `GET /api/management/v1/catalogs` fails with a Keycloak bearer token.
+
+1. **401 with `www-authenticate: Bearer` and no server-side log entry mentioning the request**
+	 Usually a stale `kubectl port-forward` process still bound to the local port (or one silently dropped). Kill and re-open it:
+	 ```bash
+	 pkill -f "port-forward svc/polaris" 2>/dev/null
+	 kubectl -n frigg-pot-platform port-forward svc/polaris 8181:8181 &
+	 sleep 2
+	 ```
+
+2. **401 caused by issuer mismatch (`iss` claim doesn't match `QUARKUS_OIDC_AUTH_SERVER_URL`)**
+	 Keycloak stamps the `iss` claim with whatever `Host` header/URL the client used to reach it. If you fetch a token via `kubectl port-forward` to `localhost:8081`, the token's issuer will be `http://localhost:8081/...`, which will never match Polaris's configured in-cluster issuer URL. Fix by forcing Keycloak to always issue the in-cluster hostname, and by fetching tokens from *inside* the cluster:
+	 ```bash
+	 kubectl -n frigg-pot-platform set env statefulset/keycloak \
+		 KC_HOSTNAME_URL=http://keycloak.frigg-pot-platform.svc.cluster.local
+	 kubectl -n frigg-pot-platform rollout restart statefulset/keycloak
+	 ```
+	 Note: Keycloak here runs as a **StatefulSet**, not a Deployment — `kubectl set env deployment/keycloak ...` silently does nothing.
+
+3. **401 with `ConfigMap` changes seemingly ignored**
+	 `kubectl set env` only works against workloads (Deployment/StatefulSet), not against a ConfigMap. To change a `POLARIS_*` value in `polaris-config`, patch the ConfigMap directly and restart the Deployment so it re-reads the env:
+	 ```bash
+	 kubectl -n frigg-pot-platform patch configmap polaris-config --type merge \
+		 -p '{"data":{"POLARIS_AUTHENTICATION_TYPE":"mixed"}}'
+	 kubectl -n frigg-pot-platform rollout restart deployment/polaris
+	 kubectl -n frigg-pot-platform rollout status deployment/polaris
+	 ```
+
+4. **401 in Polaris logs: `Failed to resolve principal from credentials=OidcPrincipalAuthInfo[...]`**
+	 The token is valid and correctly mapped (name + roles extracted), but no matching Polaris `Principal` entity exists yet. Polaris does **not** auto-provision principals from OIDC claims — see [Bootstrapping A Principal](#bootstrapping-a-principal-from-a-keycloak-identity) below.
+
+5. **403 Forbidden: `activated PrincipalRoles '[]' ... not authorized for op LIST_CATALOGS`**
+	 The principal exists, but the `PrincipalRole` names produced by the OIDC role mapping (e.g. `service_admin`, `catalog_reader`) don't exist as entities yet, or aren't granted to the principal. The role claims in the token only *activate* pre-existing grants — they don't create the `PrincipalRole` entities or the grant relationship. Create the roles and grant them (see below).
+
+6. **`QUARKUS_OIDC_APPLICATION_TYPE` gotcha**
+	 Valid values are `web-app`, `hybrid`, `service` (not `web`). For a bearer-token API like Polaris's management API, use `service`.
+
+7. **Prefer `mixed` over `external` for authentication type**
+	 `external` disables the internal token endpoint entirely (`501 Not Implemented`), which also blocks the bootstrap root credentials from being exchanged for a token — making it much harder to bootstrap principals/roles. `mixed` accepts both internal (bootstrap) and OIDC (Keycloak) tokens simultaneously, so keep it as the default for this environment.
+
+### Bootstrapping A Principal From A Keycloak Identity
+Polaris requires the `Principal` (and any `PrincipalRole`s referenced in the token's role claims) to exist and be granted **before** a Keycloak-issued token can be used successfully. This only needs to be done once per user/role, not per token/session.
+
+1. Get an internal admin token using the Polaris bootstrap root credentials (`POLARIS_BOOTSTRAP_CREDENTIALS` in `values.yaml`, format `REALM,client_id,client_secret`):
+	 ```bash
+	 BOOTSTRAP_TOKEN=$(curl -s http://localhost:8181/api/catalog/v1/oauth/tokens \
+		 --user polaris-root:change-me-polaris-root-secret \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -d 'grant_type=client_credentials' \
+		 -d 'scope=PRINCIPAL_ROLE:ALL' | jq -r .access_token)
+	 ```
+2. Create the principal (name must match the OIDC `email` claim, since `POLARIS_OIDC_PRINCIPAL_NAME_CLAIM_PATH=email`):
+	 ```bash
+	 curl -s -X POST http://localhost:8181/api/management/v1/principals \
+		 -H "Authorization: Bearer ${BOOTSTRAP_TOKEN}" \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -H 'Content-Type: application/json' \
+		 -d '{
+			 "principal": { "name": "michael.homme@fb.no" },
+			 "credentialRotationRequired": false
+		 }'
+	 ```
+	 This returns a one-time `clientId`/`clientSecret` for the principal; these are unrelated to Keycloak and are only needed if you also want to authenticate this principal directly against Polaris's internal token endpoint.
+3. Create each `PrincipalRole` referenced by the Keycloak role mapping (strip the `POLARIS_` prefix per `POLARIS_OIDC_ROLE_MAPPING_REGEX`):
+	 ```bash
+	 curl -s -X POST http://localhost:8181/api/management/v1/principal-roles \
+		 -H "Authorization: Bearer ${BOOTSTRAP_TOKEN}" \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -H 'Content-Type: application/json' \
+		 -d '{"principalRole": {"name": "service_admin"}}'
+
+	 curl -s -X POST http://localhost:8181/api/management/v1/principal-roles \
+		 -H "Authorization: Bearer ${BOOTSTRAP_TOKEN}" \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -H 'Content-Type: application/json' \
+		 -d '{"principalRole": {"name": "catalog_reader"}}'
+	 ```
+4. Grant each role to the principal:
+	 ```bash
+	 curl -s -X PUT "http://localhost:8181/api/management/v1/principals/michael.homme%40fb.no/principal-roles" \
+		 -H "Authorization: Bearer ${BOOTSTRAP_TOKEN}" \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -H 'Content-Type: application/json' \
+		 -d '{"principalRole": {"name": "service_admin"}}'
+
+	 curl -s -X PUT "http://localhost:8181/api/management/v1/principals/michael.homme%40fb.no/principal-roles" \
+		 -H "Authorization: Bearer ${BOOTSTRAP_TOKEN}" \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -H 'Content-Type: application/json' \
+		 -d '{"principalRole": {"name": "catalog_reader"}}'
+	 ```
+5. Verify with the Keycloak-issued token (see [decoding a token](#decoding-a-keycloak-token-for-debugging) below to fetch one):
+	 ```bash
+	 curl -i -H "Authorization: Bearer ${TOKEN}" \
+		 -H 'Polaris-Realm: POLARIS' \
+		 -H 'Accept: application/json' \
+		 http://localhost:8181/api/management/v1/catalogs
+	 ```
+
+### Decoding A Keycloak Token For Debugging
+No `jwt`/`jq`-specific tooling required — decode the JWT payload (2nd segment) with base64 and pretty-print with Python:
+
+```bash
+echo "${TOKEN}" | cut -d. -f2 | python3 -c "
+import sys, base64, json
+data = sys.stdin.read().strip()
+decoded = base64.urlsafe_b64decode(data + '====')
+print(json.dumps(json.loads(decoded), indent=2))
+" | jq '{iss, aud, email, preferred_username, realm_access}'
+```
+
+Fields to check when debugging a 401/403:
+- `iss`: must exactly match Polaris's configured `QUARKUS_OIDC_AUTH_SERVER_URL`.
+- `aud`: must include the Polaris/Trino client ID (add a Keycloak audience mapper on the client if it's missing — Keycloak defaults `aud` to `account` only).
+- `email` (or whichever claim `POLARIS_OIDC_PRINCIPAL_NAME_CLAIM_PATH` points to): must match an existing Polaris `Principal` name exactly.
+- `realm_access.roles`: must contain `POLARIS_<role>` entries matching `PrincipalRole`s that exist and are granted to the principal.
+
 #### Option A: Helm-managed Kubernetes secret
 If you want Helm to create the Kubernetes secret for Trino, enable the secret template and pass the client secret at deploy time from an untracked override file or `--set-string`:
 

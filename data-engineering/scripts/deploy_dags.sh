@@ -14,7 +14,7 @@ DATA_PLATFORM_NAMESPACE="${DATA_PLATFORM_NAMESPACE:-frigg-pot-platform}"
 AIRFLOW_DAGS_CONFIGMAP="${AIRFLOW_DAGS_CONFIGMAP:-airflow-dags}"
 AIRFLOW_SCHEDULER_DEPLOYMENT="${AIRFLOW_SCHEDULER_DEPLOYMENT:-}"
 AIRFLOW_WEBSERVER_DEPLOYMENT="${AIRFLOW_WEBSERVER_DEPLOYMENT:-}"
-DAG_DIR="$REPO_ROOT/data-engineering/airflow/dags"
+DAG_DIR="$REPO_ROOT/data-engineering/airflow/dags
 
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "kubectl is required"
